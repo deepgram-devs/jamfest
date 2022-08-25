@@ -49,6 +49,7 @@ fn main() {
     .insert_resource(Gravity::from(Vec3::new(0.0, 0.0, 0.0)))
     .add_startup_system(spawn_player)
     .add_system(keyboard_input)
+    .add_system(camera_follow_player)
     .add_startup_system(spawn_blueberry_basket)
     .add_startup_system(spawn_wooden_sign)
     .add_system(jam_puzzle_sign_system)
@@ -100,32 +101,31 @@ fn spawn_player(mut commands: Commands) {
 }
 
 fn keyboard_input(keys: Res<Input<KeyCode>>, mut query: Query<&mut Velocity, With<Player>>) {
+    let mut velocity = query.single_mut();
     if keys.pressed(KeyCode::W) {
-        for mut velocity in query.iter_mut() {
-            velocity.linear.y = PLAYER_SPEED;
-        }
+        velocity.linear.y = PLAYER_SPEED;
     } else if keys.pressed(KeyCode::S) {
-        for mut velocity in query.iter_mut() {
-            velocity.linear.y = -PLAYER_SPEED;
-        }
+        velocity.linear.y = -PLAYER_SPEED;
     } else {
-        for mut velocity in query.iter_mut() {
-            velocity.linear.y = 0.0;
-        }
+        velocity.linear.y = 0.0;
     }
     if keys.pressed(KeyCode::A) {
-        for mut velocity in query.iter_mut() {
-            velocity.linear.x = -PLAYER_SPEED;
-        }
+        velocity.linear.x = -PLAYER_SPEED;
     } else if keys.pressed(KeyCode::D) {
-        for mut velocity in query.iter_mut() {
-            velocity.linear.x = PLAYER_SPEED;
-        }
+        velocity.linear.x = PLAYER_SPEED;
     } else {
-        for mut velocity in query.iter_mut() {
-            velocity.linear.x = 0.0;
-        }
+        velocity.linear.x = 0.0;
     }
+}
+
+fn camera_follow_player(
+    mut camera_query: Query<&mut Transform, (With<Camera>, Without<Player>)>,
+    player_query: Query<&Transform, With<Player>>,
+) {
+    let player = player_query.single();
+    let mut camera = camera_query.single_mut();
+    camera.translation.x = player.translation.x;
+    camera.translation.y = player.translation.y;
 }
 
 #[derive(Component)]
