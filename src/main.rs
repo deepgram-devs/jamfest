@@ -12,6 +12,7 @@ mod microphone;
 
 #[derive(PhysicsLayer)]
 enum Layer {
+    Npc,
     Items,
     Player,
 }
@@ -53,6 +54,7 @@ fn main() {
     .add_system(camera_follow_player)
     .add_startup_system(spawn_blueberry_basket)
     .add_startup_system(spawn_wooden_planks)
+    .add_startup_system(spawn_bear)
     .add_startup_system(spawn_rope_coil)
     .add_startup_system(spawn_wooden_sign)
     .add_system(jam_puzzle_sign_system)
@@ -60,6 +62,7 @@ fn main() {
     .add_event::<microphone::SugarSaid>()
     .add_system(handle_sugar_said_event)
     .add_system(handle_rope_pickup_event)
+    .add_system(move_bear_to_jam_jar)
     .add_system(cook_jam);
 
     #[cfg(feature = "deepgram")]
@@ -120,7 +123,10 @@ fn camera_follow_player(
     mut camera_query: Query<&mut Transform, (With<Camera>, Without<Player>)>,
     player_query: Query<&Transform, With<Player>>,
 ) {
-    camera_query.single_mut().translation = player_query.single().translation;
+    let mut camera = camera_query.single_mut();
+    let player = player_query.single();
+    camera.translation.x = player.translation.x;
+    camera.translation.y = player.translation.y;
 }
 
 #[derive(Component)]
@@ -261,6 +267,34 @@ fn spawn_jam_jar(commands: &mut Commands, asset_server: Res<AssetServer>) {
         .insert(JamJar);
 }
 
+#[derive(Component)]
+pub(crate) struct Bear;
+
+fn spawn_bear(mut commands: Commands) {
+    commands
+        // TODO use an actual bear sprite
+        .spawn_bundle(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(0.5, 0.5, 0.5),
+                ..default()
+            },
+            transform: Transform::from_xyz(50.0, 50.0, 2.0).with_scale(Vec3::splat(8.0)),
+            ..default()
+        })
+        .insert(RigidBody::KinematicVelocityBased)
+        .insert(Velocity::from_linear(Vec3::ZERO))
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Npc)
+                .with_mask(Layer::Player),
+        )
+        .insert(Bear);
+}
+
 fn handle_sugar_said_event(
     sugar_said_event: EventReader<microphone::SugarSaid>,
     commands: Commands,
@@ -291,6 +325,26 @@ fn cook_jam(
             despawn_sugar_bag(&mut commands, sugar_bag_query);
             despawn_blueberry_basket(&mut commands, blueberry_basket_query);
             info!("Spawned jam jar");
+        }
+    }
+}
+
+fn move_bear_to_jam_jar(
+    jam_jar_query: Query<&Transform, With<JamJar>>,
+    mut bear_query: Query<(&Transform, &mut Velocity), With<Bear>>,
+) {
+    if let Ok(jam_jar) = jam_jar_query.get_single() {
+        let (bear_transform, mut bear_velocity) = bear_query.single_mut();
+        let difference = jam_jar.translation - bear_transform.translation;
+        let distance = difference.length();
+        if distance > 20.0 {
+            let direction = difference.normalize();
+            *bear_velocity = Velocity::from_linear(direction * 10.0);
+        } else {
+            // Also start bear eating jam animation and allow user to pick up wooden planks.
+            // That or make the bear collision box really big or something :shrug:
+            // Actually, should allow picking up the wood as soon as the bear has cleared the wood.
+            *bear_velocity = Velocity::from_linear(Vec3::ZERO);
         }
     }
 }
