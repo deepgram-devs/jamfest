@@ -5,6 +5,9 @@ use futures::{
 };
 use tokio::runtime::Runtime;
 
+#[derive(Default)]
+pub struct SugarSaid;
+
 pub struct MicrophonePlugin;
 impl Plugin for MicrophonePlugin {
     fn build(&self, app: &mut App) {
@@ -175,6 +178,7 @@ fn handle_asr(
     microphone_receiver: Res<MicrophoneReceiver>,
     mut deepgram_websocket: ResMut<DeepgramWebsocket>,
     async_runtime: Res<AsyncRuntime>,
+    mut sugar_said_event: EventWriter<SugarSaid>,
 ) {
     while let Ok(audio_buffer) = microphone_receiver.rx.try_recv() {
         let sample_bytes = audio_buffer
@@ -195,8 +199,7 @@ fn handle_asr(
     while let Ok(message) = deepgram_websocket.rx.try_recv() {
         if let tungstenite::Message::Text(message) = message {
             if message.contains("sugar") {
-                println!("you said \"sugar\"");
-                // trigger spawning of sugar
+                sugar_said_event.send_default();
             }
         }
     }
