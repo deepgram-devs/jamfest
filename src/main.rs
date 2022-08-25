@@ -22,6 +22,7 @@ struct JamStartTimer(Timer);
 #[derive(Default)]
 struct GameState {
     jam_puzzle_completed: bool,
+    rope_collected: bool,
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -58,6 +59,7 @@ fn main() {
     .add_startup_system(setup_camera)
     .add_event::<microphone::SugarSaid>()
     .add_system(handle_sugar_said_event)
+    .add_system(handle_rope_pickup_event)
     .add_system(cook_jam);
 
     #[cfg(feature = "deepgram")]
@@ -196,7 +198,7 @@ fn spawn_rope_coil(mut commands: Commands, asset_server: Res<AssetServer>) {
             transform: Transform::from_xyz(200.0, 50.0, 1.0).with_scale(Vec3::splat(1.0)),
             ..default()
         })
-        .insert(RigidBody::Static)
+        .insert(RigidBody::Sensor)
         .insert(CollisionShape::Cuboid {
             half_extends: Vec3::new(8.0, 16.0, 1.0),
             border_radius: None,
@@ -400,4 +402,23 @@ fn spawn_jam_puzzle_text(commands: &mut Commands, asset_server: Res<AssetServer>
             }),
         )
         .insert(JamPuzzleText);
+}
+
+fn handle_rope_pickup_event(
+    mut commands: Commands,
+    mut events: EventReader<CollisionEvent>,
+    mut game_state: ResMut<GameState>,
+    rope_coil_query: Query<Entity, With<RopeCoil>>,
+) {
+    // Optionally `if !game_state.rope_collected`
+    if let Ok(rope_coil) = rope_coil_query.get_single() {
+        for event in events.iter() {
+            let (e1, e2) = event.rigid_body_entities();
+            if e1 == rope_coil || e2 == rope_coil {
+                game_state.rope_collected = true;
+                commands.entity(rope_coil).despawn_recursive();
+                info!("Collected rope coil!");
+            }
+        }
+    }
 }
