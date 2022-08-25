@@ -51,6 +51,8 @@ fn main() {
     .add_system(keyboard_input)
     .add_system(camera_follow_player)
     .add_startup_system(spawn_blueberry_basket)
+    .add_startup_system(spawn_wooden_planks)
+    .add_startup_system(spawn_rope_coil)
     .add_startup_system(spawn_wooden_sign)
     .add_system(jam_puzzle_sign_system)
     .add_startup_system(setup_camera)
@@ -154,6 +156,62 @@ fn spawn_blueberry_basket(mut commands: Commands, asset_server: Res<AssetServer>
                 .with_mask(Layer::Player),
         )
         .insert(BlueberryBasket);
+}
+
+#[derive(Component)]
+pub(crate) struct WoodenPlanks;
+
+fn spawn_wooden_planks(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("wooden_planks.png"),
+            transform: Transform::from_xyz(50.0, 50.0, 1.0).with_scale(Vec3::splat(1.0)),
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(PhysicMaterial {
+            friction: 1.0,
+            density: 10.0,
+            ..Default::default()
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Player),
+        )
+        .insert(WoodenPlanks);
+}
+
+#[derive(Component)]
+pub(crate) struct RopeCoil;
+
+fn spawn_rope_coil(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("rope_coil.png"),
+            transform: Transform::from_xyz(200.0, 50.0, 1.0).with_scale(Vec3::splat(1.0)),
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 16.0, 1.0),
+            border_radius: None,
+        })
+        .insert(PhysicMaterial {
+            friction: 1.0,
+            density: 10.0,
+            ..Default::default()
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Player),
+        )
+        .insert(RopeCoil);
 }
 
 #[derive(Component)]
