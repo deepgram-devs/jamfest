@@ -3,8 +3,9 @@ use heron::prelude::*;
 
 use std::time::Duration;
 
-const X_RESOLUTION: f32 = 320.0;
-const Y_RESOLUTION: f32 = 240.0;
+const X_RESOLUTION: f32 = 640.0;
+const Y_RESOLUTION: f32 = 480.0;
+const PLAYER_SPEED: f32 = 20.0;
 
 #[cfg(feature = "deepgram")]
 mod microphone;
@@ -46,7 +47,11 @@ fn main() {
     .add_plugin(PhysicsPlugin::default())
     .insert_resource(JamStartTimer(Timer::new(Duration::from_secs(2), false)))
     .insert_resource(Gravity::from(Vec3::new(0.0, 0.0, 0.0)))
+    .add_startup_system(spawn_player)
+    .add_system(keyboard_input)
     .add_startup_system(spawn_blueberry_basket)
+    .add_startup_system(spawn_wooden_sign)
+    .add_system(jam_puzzle_sign_system)
     .add_startup_system(setup_camera)
     .add_event::<microphone::SugarSaid>()
     .add_system(handle_sugar_said_event)
@@ -59,19 +64,89 @@ fn main() {
 }
 
 #[derive(Component)]
+pub(crate) struct Player;
+
+// NOTE: we are using a Dynamic body because it... works
+// but normally one would "move and slide" a Kinematic body in other engines...
+fn spawn_player(mut commands: Commands) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(1.0, 1.0, 1.0),
+                ..default()
+            },
+            transform: Transform::from_xyz(0.0, -40.0, 1.0).with_scale(Vec3::splat(16.0)),
+            ..default()
+        })
+        .insert(RigidBody::Dynamic)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(Velocity::from_linear(Vec3::ZERO))
+        .insert(Acceleration::from_linear(Vec3::ZERO))
+        .insert(PhysicMaterial {
+            friction: 1.0,
+            density: 10.0,
+            ..Default::default()
+        })
+        .insert(RotationConstraints::lock())
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Player)
+                .with_mask(Layer::Items),
+        )
+        .insert(Player);
+}
+
+fn keyboard_input(keys: Res<Input<KeyCode>>, mut query: Query<&mut Velocity, With<Player>>) {
+    if keys.pressed(KeyCode::W) {
+        for mut velocity in query.iter_mut() {
+            velocity.linear.y = PLAYER_SPEED;
+        }
+    } else if keys.pressed(KeyCode::S) {
+        for mut velocity in query.iter_mut() {
+            velocity.linear.y = -PLAYER_SPEED;
+        }
+    } else {
+        for mut velocity in query.iter_mut() {
+            velocity.linear.y = 0.0;
+        }
+    }
+    if keys.pressed(KeyCode::A) {
+        for mut velocity in query.iter_mut() {
+            velocity.linear.x = -PLAYER_SPEED;
+        }
+    } else if keys.pressed(KeyCode::D) {
+        for mut velocity in query.iter_mut() {
+            velocity.linear.x = PLAYER_SPEED;
+        }
+    } else {
+        for mut velocity in query.iter_mut() {
+            velocity.linear.x = 0.0;
+        }
+    }
+}
+
+#[derive(Component)]
 pub(crate) struct BlueberryBasket;
 
 fn spawn_blueberry_basket(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("blueberry_basket.png"),
-            transform: Transform::from_xyz(20.0, 0.0, 1.0).with_scale(Vec3::splat(1.0)),
+            transform: Transform::from_xyz(20.0, 30.0, 1.0).with_scale(Vec3::splat(1.0)),
             ..default()
         })
         .insert(RigidBody::Static)
         .insert(CollisionShape::Cuboid {
             half_extends: Vec3::new(8.0, 8.0, 1.0),
             border_radius: None,
+        })
+        .insert(PhysicMaterial {
+            friction: 1.0,
+            density: 10.0,
+            ..Default::default()
         })
         .insert(
             CollisionLayers::none()
@@ -82,13 +157,41 @@ fn spawn_blueberry_basket(mut commands: Commands, asset_server: Res<AssetServer>
 }
 
 #[derive(Component)]
+pub(crate) struct WoodenSign;
+
+fn spawn_wooden_sign(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("wooden_sign.png"),
+            transform: Transform::from_xyz(0.0, -10.0, 1.0).with_scale(Vec3::splat(1.0)),
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(3.0, 12.0, 1.0),
+            border_radius: None,
+        })
+        .insert(PhysicMaterial {
+            friction: 1.0,
+            density: 10.0,
+            ..Default::default()
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Player),
+        )
+        .insert(WoodenSign);
+}
+
+#[derive(Component)]
 pub(crate) struct SugarBag;
 
 fn spawn_sugar_bag(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("sugar_bag.png"),
-            transform: Transform::from_xyz(-20.0, 0.0, 1.0).with_scale(Vec3::splat(1.0)),
+            transform: Transform::from_xyz(-20.0, 30.0, 1.0).with_scale(Vec3::splat(1.0)),
             ..default()
         })
         .insert(RigidBody::Static)
@@ -111,7 +214,7 @@ fn spawn_jam_jar(commands: &mut Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("jam_jar.png"),
-            transform: Transform::from_xyz(0.0, 0.0, 1.0).with_scale(Vec3::splat(1.0)),
+            transform: Transform::from_xyz(0.0, 30.0, 1.0).with_scale(Vec3::splat(1.0)),
             ..default()
         })
         .insert(RigidBody::Static)
@@ -172,4 +275,71 @@ fn despawn_blueberry_basket(
 ) {
     let blueberry_basket_entity = blueberry_basket_query.single();
     commands.entity(blueberry_basket_entity).despawn_recursive();
+}
+
+fn jam_puzzle_sign_system(
+    mut commands: Commands,
+    player_query: Query<&Transform, With<Player>>,
+    wooden_sign_query: Query<&Transform, With<WoodenSign>>,
+    jam_puzzle_text_query: Query<Entity, With<JamPuzzleText>>,
+    asset_server: Res<AssetServer>,
+) {
+    let player_transform = player_query.single();
+
+    let wooden_sign_transform = wooden_sign_query.single();
+
+    if jam_puzzle_text_query.is_empty()
+        && player_transform
+            .translation
+            .distance(wooden_sign_transform.translation)
+            < 40.0
+    {
+        spawn_jam_puzzle_text(&mut commands, asset_server);
+    }
+    if !jam_puzzle_text_query.is_empty()
+        && player_transform
+            .translation
+            .distance(wooden_sign_transform.translation)
+            > 40.0
+    {
+        despawn_jam_puzzle_text(&mut commands, jam_puzzle_text_query);
+    }
+}
+
+fn despawn_jam_puzzle_text(
+    commands: &mut Commands,
+    jam_puzzle_text_query: Query<Entity, With<JamPuzzleText>>,
+) {
+    let jam_puzzle_text_entity = jam_puzzle_text_query.single();
+    commands.entity(jam_puzzle_text_entity).despawn_recursive();
+}
+
+#[derive(Component)]
+pub(crate) struct JamPuzzleText;
+
+fn spawn_jam_puzzle_text(commands: &mut Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(
+            TextBundle::from_sections([TextSection::new(
+                "Say the word sugar.",
+                TextStyle {
+                    font: asset_server.load("kongtext.ttf"),
+                    font_size: 16.0,
+                    color: Color::WHITE,
+                },
+            )])
+            // centering the text in the way we'd like was quite difficult
+            // and might be worth more thought
+            .with_style(Style {
+                align_self: AlignSelf::FlexStart,
+                justify_content: JustifyContent::Center,
+                margin: UiRect {
+                    left: Val::Auto,
+                    right: Val::Auto,
+                    ..default()
+                },
+                ..default()
+            }),
+        )
+        .insert(JamPuzzleText);
 }
