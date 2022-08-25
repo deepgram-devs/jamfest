@@ -54,6 +54,8 @@ impl FromWorld for MicrophoneReceiver {
 
         connect_to_microphone(audio_sender);
 
+        info!("Connected to microphone.");
+
         MicrophoneReceiver { rx: audio_receiver }
     }
 }
@@ -105,6 +107,8 @@ impl FromWorld for DeepgramWebsocket {
                 let _ = tx.send(message);
             }
         });
+
+        info!("Connected to Deepgram");
 
         DeepgramWebsocket { tx: ws_tx, rx }
     }
