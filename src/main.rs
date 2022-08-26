@@ -5,7 +5,39 @@ use std::time::Duration;
 
 const X_RESOLUTION: f32 = 640.0;
 const Y_RESOLUTION: f32 = 480.0;
-const PLAYER_SPEED: f32 = 20.0;
+const PLAYER_SPEED: f32 = 100.0;
+
+// coordinates of objects in the jam room
+const WOODEN_SIGN_JAM_X: f32 = -200.0;
+const WOODEN_SIGN_JAM_Y: f32 = -10.0;
+const BLUEBERRY_BASKET_X: f32 = -180.0;
+const BLUEBERRY_BASKET_Y: f32 = 20.0;
+const SUGAR_BAG_X: f32 = -220.0;
+const SUGAR_BAG_Y: f32 = 20.0;
+const JAM_JAR_X: f32 = -200.0;
+const JAM_JAR_Y: f32 = 20.0;
+const BEAR_X: f32 = -170.0;
+const BEAR_Y: f32 = 50.0;
+const WOODEN_PLANKS_X: f32 = -170.0;
+const WOODEN_PLANKS_Y: f32 = 50.0;
+
+// coordinates of objects in the mentos room
+const WOODEN_SIGN_MENTOS_X: f32 = 200.0;
+const WOODEN_SIGN_MENTOS_Y: f32 = -10.0;
+// BULLSEYE_X
+// BULLSEYE_Y
+// COLA_X
+// COLA_Y
+// ROPE_X
+// ROPE_Y
+
+// coordinates of objects in the bridge room
+const WOODEN_SIGN_BRIDGE_X: f32 = 0.0;
+const WOODEN_SIGN_BRIDGE_Y: f32 = -10.0;
+// BRIDGE_X
+// BRIDGE_Y
+// GOAL_X
+// GOAL_Y
 
 #[cfg(feature = "deepgram")]
 mod microphone;
@@ -23,7 +55,8 @@ struct JamStartTimer(Timer);
 #[derive(Default)]
 struct GameState {
     jam_puzzle_completed: bool,
-    rope_collected: bool,
+    wooden_planks_collected: bool,
+    rope_coil_collected: bool,
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -56,12 +89,13 @@ fn main() {
     .add_startup_system(spawn_wooden_planks)
     .add_startup_system(spawn_bear)
     .add_startup_system(spawn_rope_coil)
-    .add_startup_system(spawn_wooden_sign)
-    .add_system(jam_puzzle_sign_system)
+    .add_startup_system(spawn_wooden_signs)
+    .add_system(puzzle_sign_system)
     .add_startup_system(setup_camera)
     .add_event::<microphone::SugarSaid>()
     .add_system(handle_sugar_said_event)
-    .add_system(handle_rope_pickup_event)
+    .add_system(handle_rope_coil_collected_event)
+    .add_system(handle_wooden_planks_collected_event)
     .add_system(move_bear_to_jam_jar)
     .add_system(cook_jam);
 
@@ -96,7 +130,8 @@ fn spawn_player(mut commands: Commands) {
         .insert(
             CollisionLayers::none()
                 .with_group(Layer::Player)
-                .with_mask(Layer::Items),
+                .with_mask(Layer::Items)
+                .with_mask(Layer::Npc),
         )
         .insert(Player);
 }
@@ -136,7 +171,7 @@ fn spawn_blueberry_basket(mut commands: Commands, asset_server: Res<AssetServer>
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("blueberry_basket.png"),
-            transform: Transform::from_xyz(20.0, 30.0, 1.0),
+            transform: Transform::from_xyz(BLUEBERRY_BASKET_X, BLUEBERRY_BASKET_Y, 1.0),
             ..default()
         })
         .insert(RigidBody::Static)
@@ -159,10 +194,10 @@ fn spawn_wooden_planks(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("wooden_planks.png"),
-            transform: Transform::from_xyz(50.0, 50.0, 1.0),
+            transform: Transform::from_xyz(WOODEN_PLANKS_X, WOODEN_PLANKS_Y, 1.0),
             ..default()
         })
-        .insert(RigidBody::Static)
+        .insert(RigidBody::Sensor)
         .insert(CollisionShape::Cuboid {
             half_extends: Vec3::new(8.0, 8.0, 1.0),
             border_radius: None,
@@ -199,13 +234,41 @@ fn spawn_rope_coil(mut commands: Commands, asset_server: Res<AssetServer>) {
 }
 
 #[derive(Component)]
-pub(crate) struct WoodenSign;
+pub(crate) struct WoodenSign(&'static str);
 
-fn spawn_wooden_sign(mut commands: Commands, asset_server: Res<AssetServer>) {
+fn spawn_wooden_signs(mut commands: Commands, asset_server: Res<AssetServer>) {
+    spawn_wooden_sign(
+        &mut commands,
+        &asset_server,
+        Transform::from_xyz(WOODEN_SIGN_JAM_X, WOODEN_SIGN_JAM_Y, 1.0),
+        "The bear is hungry and would like some jam. Here are some blueberries, what else do you need to make jam?",
+    );
+
+    spawn_wooden_sign(
+        &mut commands,
+        &asset_server,
+        Transform::from_xyz(WOODEN_SIGN_MENTOS_X, WOODEN_SIGN_MENTOS_Y, 1.0),
+        "Say mentos.",
+    );
+
+    spawn_wooden_sign(
+        &mut commands,
+        &asset_server,
+        Transform::from_xyz(WOODEN_SIGN_BRIDGE_X, WOODEN_SIGN_BRIDGE_Y, 1.0),
+        "Say bridge.",
+    );
+}
+
+fn spawn_wooden_sign(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    position: Transform,
+    text: &'static str,
+) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("wooden_sign.png"),
-            transform: Transform::from_xyz(0.0, -10.0, 1.0),
+            transform: position,
             ..default()
         })
         .insert(RigidBody::Static)
@@ -218,7 +281,7 @@ fn spawn_wooden_sign(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .with_group(Layer::Items)
                 .with_mask(Layer::Player),
         )
-        .insert(WoodenSign);
+        .insert(WoodenSign(text));
 }
 
 #[derive(Component)]
@@ -228,7 +291,7 @@ fn spawn_sugar_bag(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("sugar_bag.png"),
-            transform: Transform::from_xyz(-20.0, 30.0, 1.0),
+            transform: Transform::from_xyz(SUGAR_BAG_X, SUGAR_BAG_Y, 1.0),
             ..default()
         })
         .insert(RigidBody::Static)
@@ -251,7 +314,7 @@ fn spawn_jam_jar(commands: &mut Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("jam_jar.png"),
-            transform: Transform::from_xyz(0.0, 30.0, 1.0),
+            transform: Transform::from_xyz(JAM_JAR_X, JAM_JAR_Y, 1.0),
             ..default()
         })
         .insert(RigidBody::Static)
@@ -278,10 +341,10 @@ fn spawn_bear(mut commands: Commands) {
                 color: Color::rgb(0.5, 0.5, 0.5),
                 ..default()
             },
-            transform: Transform::from_xyz(50.0, 50.0, 2.0).with_scale(Vec3::splat(8.0)),
+            transform: Transform::from_xyz(BEAR_X, BEAR_Y, 2.0).with_scale(Vec3::splat(8.0)),
             ..default()
         })
-        .insert(RigidBody::KinematicVelocityBased)
+        .insert(RigidBody::Dynamic)
         .insert(Velocity::from_linear(Vec3::ZERO))
         .insert(CollisionShape::Cuboid {
             half_extends: Vec3::new(8.0, 8.0, 1.0),
@@ -292,6 +355,12 @@ fn spawn_bear(mut commands: Commands) {
                 .with_group(Layer::Npc)
                 .with_mask(Layer::Player),
         )
+        // giving the bear infinite mass so that you can't push it
+        .insert(PhysicMaterial {
+            friction: 1.0,
+            density: f32::MAX,
+            ..Default::default()
+        })
         .insert(Bear);
 }
 
@@ -300,13 +369,25 @@ fn handle_sugar_said_event(
     commands: Commands,
     asset_server: Res<AssetServer>,
     mut game_state: ResMut<GameState>,
+    player_query: Query<&Transform, With<Player>>,
+    blueberry_basket_query: Query<&Transform, With<BlueberryBasket>>,
 ) {
-    if !sugar_said_event.is_empty() && !game_state.jam_puzzle_completed {
-        info!("You said sugar!");
-        spawn_sugar_bag(commands, asset_server);
-        game_state.jam_puzzle_completed = true;
+    let player_transform = player_query.single();
+
+    if let Ok(blueberry_basket_transform) = blueberry_basket_query.get_single() {
+        if player_transform
+            .translation
+            .distance(blueberry_basket_transform.translation)
+            < 50.0
+        {
+            if !sugar_said_event.is_empty() && !game_state.jam_puzzle_completed {
+                info!("You said sugar!");
+                spawn_sugar_bag(commands, asset_server);
+                game_state.jam_puzzle_completed = true;
+            }
+            sugar_said_event.clear();
+        }
     }
-    sugar_said_event.clear();
 }
 
 fn cook_jam(
@@ -362,51 +443,56 @@ fn despawn_blueberry_basket(
     commands.entity(blueberry_basket_entity).despawn_recursive();
 }
 
-fn jam_puzzle_sign_system(
+fn puzzle_sign_system(
     mut commands: Commands,
     player_query: Query<&Transform, With<Player>>,
-    wooden_sign_query: Query<&Transform, With<WoodenSign>>,
-    jam_puzzle_text_query: Query<Entity, With<JamPuzzleText>>,
+    wooden_sign_query: Query<(&WoodenSign, &Transform)>,
+    puzzle_text_query: Query<Entity, With<PuzzleText>>,
     asset_server: Res<AssetServer>,
 ) {
     let player_transform = player_query.single();
 
-    let wooden_sign_transform = wooden_sign_query.single();
+    let mut found_wooden_sign = None;
 
-    if jam_puzzle_text_query.is_empty()
-        && player_transform
+    for (wooden_sign, wooden_sign_transform) in wooden_sign_query.iter() {
+        if player_transform
             .translation
             .distance(wooden_sign_transform.translation)
             < 40.0
-    {
-        spawn_jam_puzzle_text(&mut commands, asset_server);
+        {
+            found_wooden_sign = Some(wooden_sign);
+        }
     }
-    if !jam_puzzle_text_query.is_empty()
-        && player_transform
-            .translation
-            .distance(wooden_sign_transform.translation)
-            > 40.0
-    {
-        despawn_jam_puzzle_text(&mut commands, jam_puzzle_text_query);
+
+    match found_wooden_sign {
+        Some(wooden_sign) => {
+            if puzzle_text_query.is_empty() {
+                spawn_puzzle_text(&mut commands, asset_server, wooden_sign.0);
+            }
+        }
+        None => {
+            despawn_puzzle_text(&mut commands, puzzle_text_query);
+        }
     }
 }
 
-fn despawn_jam_puzzle_text(
+fn despawn_puzzle_text(
     commands: &mut Commands,
-    jam_puzzle_text_query: Query<Entity, With<JamPuzzleText>>,
+    puzzle_text_query: Query<Entity, With<PuzzleText>>,
 ) {
-    let jam_puzzle_text_entity = jam_puzzle_text_query.single();
-    commands.entity(jam_puzzle_text_entity).despawn_recursive();
+    for puzzle_text_entity in puzzle_text_query.iter() {
+        commands.entity(puzzle_text_entity).despawn_recursive();
+    }
 }
 
 #[derive(Component)]
-pub(crate) struct JamPuzzleText;
+pub(crate) struct PuzzleText;
 
-fn spawn_jam_puzzle_text(commands: &mut Commands, asset_server: Res<AssetServer>) {
+fn spawn_puzzle_text(commands: &mut Commands, asset_server: Res<AssetServer>, text: &'static str) {
     commands
         .spawn_bundle(
             TextBundle::from_sections([TextSection::new(
-                "Say the word sugar.",
+                text,
                 TextStyle {
                     font: asset_server.load("kongtext.ttf"),
                     font_size: 16.0,
@@ -418,31 +504,74 @@ fn spawn_jam_puzzle_text(commands: &mut Commands, asset_server: Res<AssetServer>
             .with_style(Style {
                 align_self: AlignSelf::FlexStart,
                 justify_content: JustifyContent::Center,
+                max_size: Size {
+                    width: Val::Px(X_RESOLUTION),
+                    height: Val::Auto,
+                },
                 margin: UiRect {
                     left: Val::Auto,
                     right: Val::Auto,
                     ..default()
                 },
+
                 ..default()
             }),
         )
-        .insert(JamPuzzleText);
+        .insert(PuzzleText);
 }
 
-fn handle_rope_pickup_event(
+fn handle_rope_coil_collected_event(
     mut commands: Commands,
     mut events: EventReader<CollisionEvent>,
     mut game_state: ResMut<GameState>,
     rope_coil_query: Query<Entity, With<RopeCoil>>,
+    player_query: Query<Entity, With<Player>>,
 ) {
-    // Optionally `if !game_state.rope_collected`
+    let player = player_query.single();
+
     if let Ok(rope_coil) = rope_coil_query.get_single() {
         for event in events.iter() {
             let (e1, e2) = event.rigid_body_entities();
-            if e1 == rope_coil || e2 == rope_coil {
-                game_state.rope_collected = true;
+            if (e1 == rope_coil || e2 == rope_coil) && (e1 == player || e2 == player) {
+                game_state.rope_coil_collected = true;
                 commands.entity(rope_coil).despawn_recursive();
                 info!("Collected rope coil!");
+                break;
+            }
+        }
+    }
+}
+
+fn handle_wooden_planks_collected_event(
+    mut commands: Commands,
+    mut events: EventReader<CollisionEvent>,
+    mut game_state: ResMut<GameState>,
+    wooden_planks_query: Query<(Entity, &Transform), With<WoodenPlanks>>,
+    player_query: Query<Entity, With<Player>>,
+    bear_query: Query<&Transform, With<Bear>>,
+) {
+    let player_entity = player_query.single();
+    let bear_transform = bear_query.single();
+
+    if let Ok((wooden_planks_entity, wooden_planks_transform)) = wooden_planks_query.get_single() {
+        // this feels a little bit hacky, but essentially, we don't want
+        // the player to be able to pick up the wood if the bear is too close to the wood
+        if wooden_planks_transform
+            .translation
+            .distance(bear_transform.translation)
+            < 16.0
+        {
+            return;
+        }
+
+        for event in events.iter() {
+            let (e1, e2) = event.rigid_body_entities();
+            if (e1 == wooden_planks_entity || e2 == wooden_planks_entity)
+                && (e1 == player_entity || e2 == player_entity)
+            {
+                game_state.wooden_planks_collected = true;
+                commands.entity(wooden_planks_entity).despawn_recursive();
+                info!("Collected wooden planks!");
                 break;
             }
         }
