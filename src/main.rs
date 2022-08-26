@@ -26,10 +26,13 @@ const WOODEN_SIGN_MENTOS_X: f32 = 200.0;
 const WOODEN_SIGN_MENTOS_Y: f32 = -10.0;
 // BULLSEYE_X
 // BULLSEYE_Y
-// COLA_X
-// COLA_Y
-// ROPE_X
-// ROPE_Y
+const COLA_X: f32 = 200.0;
+const COLA_Y: f32 = 50.0;
+const MENTOS_INITIAL_X: f32 = 200.0;
+const MENTOS_INITIAL_Y: f32 = 150.0;
+const MENTOS_SPEED: f32 = -20.0;
+const ROPE_X: f32 = 250.0;
+const ROPE_Y: f32 = 50.0;
 
 // coordinates of objects in the bridge room
 const WOODEN_SIGN_BRIDGE_X: f32 = 0.0;
@@ -54,7 +57,8 @@ struct JamStartTimer(Timer);
 
 #[derive(Default)]
 struct GameState {
-    jam_puzzle_completed: bool,
+    mentos_puzzle_completed: bool,
+    sugar_puzzle_completed: bool,
     wooden_planks_collected: bool,
     rope_coil_collected: bool,
 }
@@ -88,13 +92,15 @@ fn main() {
     .add_startup_system(spawn_blueberry_basket)
     .add_startup_system(spawn_wooden_planks)
     .add_startup_system(spawn_bear)
-    .add_startup_system(spawn_rope_coil)
+    .add_startup_system(spawn_soda)
     .add_startup_system(spawn_wooden_signs)
     .add_system(puzzle_sign_system)
     .add_startup_system(setup_camera)
-    .add_event::<microphone::SugarSaid>()
+    .add_event::<microphone::SpeechEvent>()
     .add_system(handle_sugar_said_event)
+    .add_system(handle_mentos_said_event)
     .add_system(handle_rope_coil_collected_event)
+    .add_system(explode_mentos)
     .add_system(handle_wooden_planks_collected_event)
     .add_system(move_bear_to_jam_jar)
     .add_system(cook_jam);
@@ -217,7 +223,7 @@ fn spawn_rope_coil(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("rope_coil.png"),
-            transform: Transform::from_xyz(200.0, 50.0, 1.0),
+            transform: Transform::from_xyz(ROPE_X, ROPE_Y, 1.0),
             ..default()
         })
         .insert(RigidBody::Sensor)
@@ -231,6 +237,58 @@ fn spawn_rope_coil(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .with_mask(Layer::Player),
         )
         .insert(RopeCoil);
+}
+
+#[derive(Component)]
+pub(crate) struct Soda;
+
+fn spawn_soda(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("soda_bottle.png"),
+            transform: Transform::from_xyz(COLA_X, COLA_Y, 1.0),
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 16.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Player),
+        )
+        .insert(Soda);
+}
+
+#[derive(Component)]
+pub(crate) struct Mentos;
+
+fn spawn_mentos(mut commands: Commands, _asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgb(0.75, 0.75, 0.75),
+                ..default()
+            },
+            // texture: asset_server.load("sugar_bag.png"),
+            transform: Transform::from_xyz(MENTOS_INITIAL_X, MENTOS_INITIAL_Y, 1.0)
+                .with_scale(Vec3::new(4.0, 16.0, 1.0)),
+            ..default()
+        })
+        .insert(RigidBody::KinematicVelocityBased)
+        .insert(Velocity::from_linear(Vec3::ZERO))
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Player),
+        )
+        .insert(Mentos);
 }
 
 #[derive(Component)]
@@ -365,27 +423,85 @@ fn spawn_bear(mut commands: Commands) {
 }
 
 fn handle_sugar_said_event(
-    sugar_said_event: EventReader<microphone::SugarSaid>,
+    mut speech_events: EventReader<microphone::SpeechEvent>,
     commands: Commands,
     asset_server: Res<AssetServer>,
     mut game_state: ResMut<GameState>,
     player_query: Query<&Transform, With<Player>>,
     blueberry_basket_query: Query<&Transform, With<BlueberryBasket>>,
 ) {
-    let player_transform = player_query.single();
+    if game_state.sugar_puzzle_completed {
+        return;
+    }
 
-    if let Ok(blueberry_basket_transform) = blueberry_basket_query.get_single() {
-        if player_transform
-            .translation
-            .distance(blueberry_basket_transform.translation)
-            < 50.0
-        {
-            if !sugar_said_event.is_empty() && !game_state.jam_puzzle_completed {
-                info!("You said sugar!");
-                spawn_sugar_bag(commands, asset_server);
-                game_state.jam_puzzle_completed = true;
-            }
-            sugar_said_event.clear();
+    let player_transform = player_query.single();
+    let blueberry_basket_transform = blueberry_basket_query.single();
+
+    if player_transform
+        .translation
+        .distance(blueberry_basket_transform.translation)
+        < 50.0
+    {
+        let sugar_said = speech_events
+            .iter()
+            .any(|event| *event == microphone::SpeechEvent::Sugar);
+        if sugar_said {
+            info!("You said sugar!");
+            spawn_sugar_bag(commands, asset_server);
+            game_state.sugar_puzzle_completed = true;
+        }
+        speech_events.clear();
+    }
+}
+
+fn handle_mentos_said_event(
+    mut speech_events: EventReader<microphone::SpeechEvent>,
+    commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut game_state: ResMut<GameState>,
+    player_query: Query<&Transform, With<Player>>,
+    soda_query: Query<&Transform, With<Soda>>,
+) {
+    if game_state.mentos_puzzle_completed {
+        return;
+    }
+
+    let player_transform = player_query.single();
+    let soda_transform = soda_query.single();
+
+    if player_transform
+        .translation
+        .distance(soda_transform.translation)
+        < 50.0
+    {
+        let mentos_said = speech_events
+            .iter()
+            .any(|event| *event == microphone::SpeechEvent::Mentos);
+        if mentos_said {
+            info!("You said mentos!");
+            spawn_mentos(commands, asset_server);
+            game_state.mentos_puzzle_completed = true;
+        }
+        speech_events.clear();
+    }
+}
+
+fn explode_mentos(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut mentos_query: Query<(Entity, &Transform, &mut Velocity), With<Mentos>>,
+    soda_query: Query<&Transform, With<Soda>>,
+) {
+    if let Ok((mentos, mentos_transform, mut mentos_velocity)) = mentos_query.get_single_mut() {
+        let soda = soda_query.single();
+        let difference = mentos_transform.translation - soda.translation;
+        let distance = difference.length();
+        if distance < 20.0 {
+            commands.entity(mentos).despawn_recursive();
+            spawn_rope_coil(commands, asset_server)
+        } else {
+            let new_velocity = difference.normalize() * MENTOS_SPEED;
+            *mentos_velocity = Velocity::from_linear(new_velocity);
         }
     }
 }
@@ -399,7 +515,7 @@ fn cook_jam(
     sugar_bag_query: Query<Entity, With<SugarBag>>,
     blueberry_basket_query: Query<Entity, With<BlueberryBasket>>,
 ) {
-    if game_state.jam_puzzle_completed {
+    if game_state.sugar_puzzle_completed {
         jam_start_time.0.tick(time.delta());
         if jam_start_time.0.just_finished() {
             spawn_jam_jar(&mut commands, asset_server);

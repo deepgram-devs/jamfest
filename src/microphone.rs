@@ -5,8 +5,12 @@ use futures::{
 };
 use tokio::runtime::Runtime;
 
-#[derive(Default)]
-pub struct SugarSaid;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpeechEvent {
+    Bridge,
+    Mentos,
+    Sugar,
+}
 
 pub struct MicrophonePlugin;
 impl Plugin for MicrophonePlugin {
@@ -29,7 +33,7 @@ async fn connect_to_deepgram(
     // TODO: don't hardcode the encoding, sample rate, or number of channels
     let request = http::Request::builder()
         .method(http::Method::GET)
-        .uri("wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=44100&channels=1")
+        .uri("wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=44100&channels=1&tier=enhanced")
         .header("Authorization", format!("Token {}", api_key))
         .body(())
         .expect("Failed to build a connection request to Deepgram.");
@@ -182,7 +186,7 @@ fn handle_asr(
     microphone_receiver: Res<MicrophoneReceiver>,
     mut deepgram_websocket: ResMut<DeepgramWebsocket>,
     async_runtime: Res<AsyncRuntime>,
-    mut sugar_said_event: EventWriter<SugarSaid>,
+    mut speech_events: EventWriter<SpeechEvent>,
 ) {
     while let Ok(audio_buffer) = microphone_receiver.rx.try_recv() {
         let sample_bytes = audio_buffer
@@ -203,7 +207,16 @@ fn handle_asr(
     while let Ok(message) = deepgram_websocket.rx.try_recv() {
         if let tungstenite::Message::Text(message) = message {
             if message.contains("sugar") {
-                sugar_said_event.send_default();
+                info!("Sending sugar speech event");
+                speech_events.send(SpeechEvent::Sugar);
+            }
+            if message.contains("mentos") {
+                info!("Sending mentos speech event");
+                speech_events.send(SpeechEvent::Mentos);
+            }
+            if message.contains("bridge") {
+                info!("Sending bridge speech event");
+                speech_events.send(SpeechEvent::Bridge);
             }
         }
     }
