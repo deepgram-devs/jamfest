@@ -24,8 +24,6 @@ const WOODEN_PLANKS_Y: f32 = 50.0;
 // coordinates of objects in the mentos room
 const WOODEN_SIGN_MENTOS_X: f32 = 500.0;
 const WOODEN_SIGN_MENTOS_Y: f32 = 70.0;
-// BULLSEYE_X
-// BULLSEYE_Y
 const COLA_X: f32 = 400.0;
 const COLA_Y: f32 = 70.0;
 const MENTOS_INITIAL_X: f32 = 400.0;

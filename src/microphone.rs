@@ -1,49 +1,22 @@
-use bevy::prelude::*;
-use futures::{
-    sink::SinkExt,
-    stream::{SplitSink, StreamExt},
-};
-use tokio::runtime::Runtime;
 use super::SpeechEvent;
+use bevy::prelude::*;
+
+use fon::{mono::Mono32, Audio, Frame};
+use pasts::exec;
+use wavy::{Microphone, MicrophoneStream};
 
 pub struct MicrophonePlugin;
 impl Plugin for MicrophonePlugin {
     fn build(&self, app: &mut App) {
-        app.init_resource::<AsyncRuntime>()
-            .init_resource::<MicrophoneReceiver>()
-            .init_resource::<DeepgramWebsocket>()
+        app.init_resource::<MicrophoneReceiver>()
+            .add_startup_system(setup_deepgram.exclusive_system())
             .add_system(handle_asr);
     }
 }
 
-/// This async function must be executed in an async runtime, and it will return a websocket handle
-/// to Deepgram, which can be used to send and receive messages, although sending and receiving must
-/// also be executed in an async runtime.
-async fn connect_to_deepgram(
-) -> tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>> {
-    let api_key = std::env::var("DEEPGRAM_API_KEY").expect("Deepgram API Key is required.");
-
-    // prepare the connection request with the api key authentication
-    // TODO: don't hardcode the encoding, sample rate, or number of channels
-    let request = http::Request::builder()
-        .method(http::Method::GET)
-        .uri("wss://api.deepgram.com/v1/listen?encoding=linear16&sample_rate=44100&channels=1&tier=enhanced")
-        .header("Authorization", format!("Token {}", api_key))
-        .body(())
-        .expect("Failed to build a connection request to Deepgram.");
-
-    // actually finally connect to deepgram
-    // we do this using the prepared http request so that we can get the auth header in there
-    let (deepgram_socket, _) = tokio_tungstenite::connect_async(request)
-        .await
-        .expect("Failed to connect to Deepgram.");
-
-    deepgram_socket
-}
-
 /// We will have one handle for the microphone as a global resource.
 struct MicrophoneReceiver {
-    rx: crossbeam_channel::Receiver<Vec<f32>>,
+    rx: crossbeam_channel::Receiver<Vec<i16>>,
 }
 
 impl FromWorld for MicrophoneReceiver {
@@ -58,112 +31,77 @@ impl FromWorld for MicrophoneReceiver {
     }
 }
 
-/// We will pass around an Arc'd Tokio Runtime as a global resourse to
-/// be used when executing async tasks.
-struct AsyncRuntime {
-    rt: std::sync::Arc<Runtime>,
-}
+/// We are using a non-send resource to handle the websocket client.
+/// See more here: https://bevy-cheatbook.github.io/programming/non-send.html
+/// We are also temporarily using a proxy websocket server to handle credentials.
+fn setup_deepgram(world: &mut World) {
+    let client = wasm_sockets::PollingClient::new("wss://spookyspeechspells.deepgram.com/deepgram_websockets_proxy?encoding=linear16&sample_rate=44100&channels=1").unwrap();
 
-impl FromWorld for AsyncRuntime {
-    fn from_world(_world: &mut World) -> Self {
-        AsyncRuntime {
-            rt: std::sync::Arc::new(Runtime::new().unwrap()),
-        }
-    }
-}
+    info!("Connected to Deepgram. Probably.");
 
-/// We will have a single handle for a Deepgram websocket connection as a global resource.
-/// This DeepgramWebsocket object/resource will contain a `tx` for sending websocket messages
-/// to Deepgram, and an `rx` for handling websocket messages received from Deepgram. Note that
-/// the `tx` must be used in an async runtime, while the `rx` can be used in any runtime.
-struct DeepgramWebsocket {
-    tx: SplitSink<
-        tokio_tungstenite::WebSocketStream<
-            tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>,
-        >,
-        tungstenite::Message,
-    >,
-    rx: crossbeam_channel::Receiver<tungstenite::Message>,
-}
-
-impl FromWorld for DeepgramWebsocket {
-    fn from_world(world: &mut World) -> Self {
-        let rt = world.get_resource::<AsyncRuntime>().unwrap();
-        let rt = rt.rt.clone();
-
-        let ws = rt.block_on(async { connect_to_deepgram().await });
-
-        let (tx, rx) = crossbeam_channel::unbounded();
-
-        let (ws_tx, mut ws_rx) = ws.split();
-
-        // Here we spawn an indefinite async task which receives websocket messages from Deepgram and pipes
-        // them into a crossbeam channel, allowing the main synchronous Bevy runtime to access them when
-        // needed (e.g. once per frame in the game loop).
-        rt.spawn(async move {
-            while let Some(Ok(message)) = ws_rx.next().await {
-                let _ = tx.send(message);
-            }
-        });
-
-        info!("Connected to Deepgram");
-
-        DeepgramWebsocket { tx: ws_tx, rx }
-    }
-}
-
-/// This uses the portaudio crate to get a connection with your computer's default audio input device (microphone).
-/// It takes the sender half of a channel as an input because this function will spawn a thread which pipes audio
-/// from the microphone to the receiving half of the channel. An example usage is:
-/// ```
-/// let (tx, rx) = crossbeam_channel::unbounded();
-/// connect_to_microphone(tx);
-/// while let Ok(audio) = rx.try_recv() {
-///     // do something with the audio
-/// }
-/// ```
-/// This is based on the following tutorial: https://dev.to/maniflames/audio-visualization-with-rust-4nhg
-fn connect_to_microphone(tx: crossbeam_channel::Sender<Vec<f32>>) {
-    let port_audio = portaudio::PortAudio::new().expect("Initializing PortAudio failed.");
-    let mic_index = port_audio
-        .default_input_device()
-        .expect("Failed to get default input device.");
-    let mic_info = port_audio
-        .device_info(mic_index)
-        .expect("Failed to get microphone info.");
-    let input_params = portaudio::StreamParameters::<f32>::new(
-        mic_index,
-        1,
-        true,
-        mic_info.default_low_input_latency,
-    );
-
-    let input_settings =
-        portaudio::InputStreamSettings::new(input_params, mic_info.default_sample_rate, 256);
-
-    let (audio_sender, audio_receiver) = crossbeam_channel::unbounded();
-
-    let audio_callback =
-        move |portaudio::InputStreamCallbackArgs { buffer, .. }| match audio_sender.send(buffer) {
-            Ok(_) => portaudio::Continue,
-            Err(_) => portaudio::Complete,
-        };
-
-    let mut audio_stream = port_audio
-        .open_non_blocking_stream(input_settings, audio_callback)
-        .expect("Failed to create audio stream.");
-    audio_stream.start().expect("Failed to start audio stream.");
-
-    // Here we spawn an indefinite synchronous task in its own thread which receives audio from
-    // the microphone and pipes it into a crossbeam channel allowing Bevy to access the audio
-    // when needed (e.g. once per frame in the game loop) via the receiving half of the channel.
-    std::thread::spawn(move || {
-        while audio_stream.is_active().unwrap() {
-            while let Ok(audio_buffer) = audio_receiver.try_recv() {
-                let _ = tx.send(audio_buffer.to_owned());
-            }
-        }
+    world.insert_non_send_resource(DeepgramWebsocket {
+        client: Some(client),
     });
+}
+
+/// This will be a non-send resource, which is perfect for polling clients
+/// which poll in a bevy system which occurs once per frame ish.
+#[derive(Default)]
+struct DeepgramWebsocket {
+    client: Option<wasm_sockets::PollingClient>,
+}
+
+/// This is based on the following example: https://github.com/libcala/wavy/blob/stable/examples/record/src/main.rs
+fn connect_to_microphone(tx: crossbeam_channel::Sender<Vec<i16>>) {
+    let mut state = State {
+        buffer: Audio::with_silence(44_100, 0),
+        tx,
+    };
+    let mut microphone = Microphone::default();
+
+    exec!(state.event(pasts::wait! {
+        Event::Record(microphone.record().await),
+    }))
+}
+
+/// An event handled by some microphone event loop.
+enum Event<'a> {
+    /// This event occurs when the microphone has recorded some audio.
+    Record(MicrophoneStream<'a, Mono32>),
+}
+
+/// A state for handling the microphone audio stream.
+struct State {
+    /// Temporary buffer for holding real-time audio samples.
+    buffer: Audio<Mono32>,
+    /// The sending half of a channel, used to send the audio to another system.
+    tx: crossbeam_channel::Sender<Vec<i16>>,
+}
+
+impl State {
+    /// Some microphone event loop.
+    fn event(&mut self, event: Event<'_>) {
+        match event {
+            // if we got an event of new audio recorded by the microphone,
+            // convert the audio to i16 pcm and send it along via a channel
+            Event::Record(microphone_stream) => {
+                // TODO: hopefully there is another way, outside of a loop, to
+                // determine the sample rate. Empirically, I found it was 44100 Hz,
+                // but this may vary by system and browser.
+                //info!("Sample rate: {:?}.", microphone_stream.sample_rate());
+
+                let mut audio_buffer = Vec::new();
+                self.buffer.extend(microphone_stream);
+
+                for frame in self.buffer.drain() {
+                    let sample: f32 = frame.channels()[0].into();
+                    audio_buffer.push(f32_to_i16(sample));
+                }
+
+                let _ = self.tx.send(audio_buffer.to_owned());
+            }
+        }
+    }
 }
 
 /// A helper function for converting f32 PCM samples to i16 (linear16) samples.
@@ -176,41 +114,43 @@ fn f32_to_i16(sample: f32) -> i16 {
     sample as i16
 }
 
-fn handle_asr(
-    microphone_receiver: Res<MicrophoneReceiver>,
-    mut deepgram_websocket: ResMut<DeepgramWebsocket>,
-    async_runtime: Res<AsyncRuntime>,
-    mut speech_events: EventWriter<SpeechEvent>,
-) {
-    while let Ok(audio_buffer) = microphone_receiver.rx.try_recv() {
-        let sample_bytes = audio_buffer
-            .into_iter()
-            .flat_map(|sample| f32_to_i16(sample).to_le_bytes())
-            .collect();
+/// A helper function for converting a vector of i16 samples to Vec<u8>
+/// in order to pass on to our websocket client.
+pub fn to_vec_u8(input: Vec<i16>) -> Vec<u8> {
+    let mut vec_u8 = Vec::with_capacity(2 * input.len());
 
-        let rt = async_runtime.rt.clone();
-
-        let _ = rt.block_on(async {
-            deepgram_websocket
-                .tx
-                .send(tungstenite::Message::Binary(sample_bytes))
-                .await
-        });
+    for value in input {
+        vec_u8.extend(&value.to_le_bytes());
     }
 
-    while let Ok(message) = deepgram_websocket.rx.try_recv() {
-        if let tungstenite::Message::Text(message) = message {
-            if message.contains("sugar") {
-                info!("Sending sugar speech event");
-                speech_events.send(SpeechEvent::Sugar);
-            }
-            if message.contains("mentos") {
-                info!("Sending mentos speech event");
-                speech_events.send(SpeechEvent::Mentos);
-            }
-            if message.contains("bridge") {
-                info!("Sending bridge speech event");
-                speech_events.send(SpeechEvent::Bridge);
+    vec_u8
+}
+
+fn handle_asr(
+    microphone_receiver: Res<MicrophoneReceiver>,
+    mut deepgram_websocket: NonSendMut<DeepgramWebsocket>,
+    mut speech_events: EventWriter<SpeechEvent>,
+) {
+    if let Some(client) = &mut deepgram_websocket.client {
+        while let Ok(audio_buffer) = microphone_receiver.rx.try_recv() {
+            client.send_binary(to_vec_u8(audio_buffer)).unwrap();
+        }
+
+        for message in client.receive() {
+            if let wasm_sockets::Message::Text(message) = message {
+                info!("Received a message from Deepgram: {:?}", message);
+                if message.contains("sugar") {
+                    info!("Sending sugar speech event.");
+                    speech_events.send(SpeechEvent::Sugar);
+                }
+                if message.contains("mentos") {
+                    info!("Sending mentos speech event.");
+                    speech_events.send(SpeechEvent::Mentos);
+                }
+                if message.contains("bridge") {
+                    info!("Sending bridge speech event.");
+                    speech_events.send(SpeechEvent::Bridge);
+                }
             }
         }
     }
