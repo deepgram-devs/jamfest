@@ -4,13 +4,7 @@ use futures::{
     stream::{SplitSink, StreamExt},
 };
 use tokio::runtime::Runtime;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SpeechEvent {
-    Bridge,
-    Mentos,
-    Sugar,
-}
+use super::SpeechEvent;
 
 pub struct MicrophonePlugin;
 impl Plugin for MicrophonePlugin {

@@ -42,6 +42,12 @@ const WOODEN_SIGN_BRIDGE_Y: f32 = -10.0;
 // GOAL_X
 // GOAL_Y
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpeechEvent {
+    Bridge,
+    Mentos,
+    Sugar,
+}
 #[cfg(feature = "deepgram")]
 mod microphone;
 
@@ -96,7 +102,7 @@ fn main() {
     .add_startup_system(spawn_wooden_signs)
     .add_system(puzzle_sign_system)
     .add_startup_system(setup_camera)
-    .add_event::<microphone::SpeechEvent>()
+    .add_event::<SpeechEvent>()
     .add_system(handle_sugar_said_event)
     .add_system(handle_mentos_said_event)
     .add_system(handle_rope_coil_collected_event)
@@ -142,7 +148,11 @@ fn spawn_player(mut commands: Commands) {
         .insert(Player);
 }
 
-fn keyboard_input(keys: Res<Input<KeyCode>>, mut query: Query<&mut Velocity, With<Player>>) {
+fn keyboard_input(
+    keys: Res<Input<KeyCode>>,
+    mut query: Query<&mut Velocity, With<Player>>,
+    mut speech_events: EventWriter<SpeechEvent>,
+) {
     let mut velocity = query.single_mut();
     if keys.pressed(KeyCode::W) {
         velocity.linear.y = PLAYER_SPEED;
@@ -157,6 +167,17 @@ fn keyboard_input(keys: Res<Input<KeyCode>>, mut query: Query<&mut Velocity, Wit
         velocity.linear.x = PLAYER_SPEED;
     } else {
         velocity.linear.x = 0.0;
+    }
+
+    if keys.just_pressed(KeyCode::J) {
+        info!("Sending sugar speech event triggered by key press");
+        speech_events.send(SpeechEvent::Sugar);
+    } else if keys.just_pressed(KeyCode::B) {
+        info!("Sending bridge speech event triggered by key press");
+        speech_events.send(SpeechEvent::Bridge);
+    } else if keys.just_pressed(KeyCode::M) {
+        info!("Sending mentos speech event triggered by key press");
+        speech_events.send(SpeechEvent::Mentos);
     }
 }
 
@@ -423,7 +444,7 @@ fn spawn_bear(mut commands: Commands) {
 }
 
 fn handle_sugar_said_event(
-    mut speech_events: EventReader<microphone::SpeechEvent>,
+    mut speech_events: EventReader<SpeechEvent>,
     commands: Commands,
     asset_server: Res<AssetServer>,
     mut game_state: ResMut<GameState>,
@@ -444,7 +465,7 @@ fn handle_sugar_said_event(
     {
         let sugar_said = speech_events
             .iter()
-            .any(|event| *event == microphone::SpeechEvent::Sugar);
+            .any(|event| *event == SpeechEvent::Sugar);
         if sugar_said {
             info!("You said sugar!");
             spawn_sugar_bag(commands, asset_server);
@@ -455,7 +476,7 @@ fn handle_sugar_said_event(
 }
 
 fn handle_mentos_said_event(
-    mut speech_events: EventReader<microphone::SpeechEvent>,
+    mut speech_events: EventReader<SpeechEvent>,
     commands: Commands,
     asset_server: Res<AssetServer>,
     mut game_state: ResMut<GameState>,
@@ -476,7 +497,7 @@ fn handle_mentos_said_event(
     {
         let mentos_said = speech_events
             .iter()
-            .any(|event| *event == microphone::SpeechEvent::Mentos);
+            .any(|event| *event == SpeechEvent::Mentos);
         if mentos_said {
             info!("You said mentos!");
             spawn_mentos(commands, asset_server);
