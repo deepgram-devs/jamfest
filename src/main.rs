@@ -8,31 +8,33 @@ const Y_RESOLUTION: f32 = 480.0;
 const PLAYER_SPEED: f32 = 100.0;
 
 // coordinates of objects in the jam room
-const WOODEN_SIGN_JAM_X: f32 = -200.0;
+const WOODEN_SIGN_JAM_X: f32 = -400.0;
 const WOODEN_SIGN_JAM_Y: f32 = -10.0;
-const BLUEBERRY_BASKET_X: f32 = -180.0;
+const BLUEBERRY_BASKET_X: f32 = -380.0;
 const BLUEBERRY_BASKET_Y: f32 = 20.0;
-const SUGAR_BAG_X: f32 = -220.0;
+const SUGAR_BAG_X: f32 = -420.0;
 const SUGAR_BAG_Y: f32 = 20.0;
-const JAM_JAR_X: f32 = -200.0;
+const JAM_JAR_X: f32 = -400.0;
 const JAM_JAR_Y: f32 = 20.0;
-const BEAR_X: f32 = -170.0;
+const BEAR_X: f32 = -370.0;
 const BEAR_Y: f32 = 50.0;
-const WOODEN_PLANKS_X: f32 = -170.0;
+const WOODEN_PLANKS_X: f32 = -370.0;
 const WOODEN_PLANKS_Y: f32 = 50.0;
 
 // coordinates of objects in the mentos room
-const WOODEN_SIGN_MENTOS_X: f32 = 200.0;
-const WOODEN_SIGN_MENTOS_Y: f32 = -10.0;
+const WOODEN_SIGN_MENTOS_X: f32 = 500.0;
+const WOODEN_SIGN_MENTOS_Y: f32 = 70.0;
 // BULLSEYE_X
 // BULLSEYE_Y
-const COLA_X: f32 = 200.0;
-const COLA_Y: f32 = 50.0;
-const MENTOS_INITIAL_X: f32 = 200.0;
-const MENTOS_INITIAL_Y: f32 = 150.0;
+const COLA_X: f32 = 400.0;
+const COLA_Y: f32 = 70.0;
+const MENTOS_INITIAL_X: f32 = 400.0;
+const MENTOS_INITIAL_Y: f32 = 170.0;
 const MENTOS_SPEED: f32 = -20.0;
-const ROPE_X: f32 = 250.0;
-const ROPE_Y: f32 = 50.0;
+const ROPE_INITIAL_X: f32 = 425.0;
+const ROPE_INITIAL_Y: f32 = 174.0;
+const BULLSEYE_X: f32 = 400.0;
+const BULLSEYE_Y: f32 = 174.0;
 
 // coordinates of objects in the bridge room
 const WOODEN_SIGN_BRIDGE_X: f32 = 0.0;
@@ -53,6 +55,7 @@ mod microphone;
 
 #[derive(PhysicsLayer)]
 enum Layer {
+    Tiles,
     Npc,
     Items,
     Player,
@@ -92,6 +95,8 @@ fn main() {
     .add_plugin(PhysicsPlugin::default())
     .insert_resource(JamStartTimer(Timer::new(Duration::from_secs(2), false)))
     .insert_resource(Gravity::from(Vec3::new(0.0, 0.0, 0.0)))
+    .add_startup_system(spawn_wall_tiles)
+    .add_startup_system(spawn_lava_tiles)
     .add_startup_system(spawn_player)
     .add_system(keyboard_input)
     .add_system(camera_follow_player)
@@ -99,6 +104,8 @@ fn main() {
     .add_startup_system(spawn_wooden_planks)
     .add_startup_system(spawn_bear)
     .add_startup_system(spawn_soda)
+    .add_startup_system(spawn_rope_coil)
+    .add_startup_system(spawn_bullseye)
     .add_startup_system(spawn_wooden_signs)
     .add_system(puzzle_sign_system)
     .add_startup_system(setup_camera)
@@ -143,7 +150,8 @@ fn spawn_player(mut commands: Commands) {
             CollisionLayers::none()
                 .with_group(Layer::Player)
                 .with_mask(Layer::Items)
-                .with_mask(Layer::Npc),
+                .with_mask(Layer::Npc)
+                .with_mask(Layer::Tiles),
         )
         .insert(Player);
 }
@@ -244,7 +252,7 @@ fn spawn_rope_coil(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("rope_coil.png"),
-            transform: Transform::from_xyz(ROPE_X, ROPE_Y, 1.0),
+            transform: Transform::from_xyz(ROPE_INITIAL_X, ROPE_INITIAL_Y, 1.0),
             ..default()
         })
         .insert(RigidBody::Sensor)
@@ -258,6 +266,29 @@ fn spawn_rope_coil(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .with_mask(Layer::Player),
         )
         .insert(RopeCoil);
+}
+
+#[derive(Component)]
+pub(crate) struct Bullseye;
+
+fn spawn_bullseye(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("bullseye.png"),
+            transform: Transform::from_xyz(BULLSEYE_X, BULLSEYE_Y, 2.0),
+            ..default()
+        })
+        .insert(RigidBody::Sensor)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 16.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Items),
+        )
+        .insert(Bullseye);
 }
 
 #[derive(Component)]
@@ -361,6 +392,185 @@ fn spawn_wooden_sign(
                 .with_mask(Layer::Player),
         )
         .insert(WoodenSign(text));
+}
+
+fn spawn_wall_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let mut coordinates = Vec::new();
+    // bridge room
+    for x in -10..=10 {
+        for y in 10..=11 {
+            coordinates.push((x, y));
+        }
+        for y in -9..=-8 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for x in -10..=-9 {
+        for y in -9..=-3 {
+            coordinates.push((x, y));
+        }
+        for y in 3..=11 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for x in 9..=10 {
+        for y in -9..=-3 {
+            coordinates.push((x, y));
+        }
+        for y in 3..=11 {
+            coordinates.push((x, y));
+        }
+    }
+
+    // jam room
+    for x in -10 - 25..=10 - 25 {
+        for y in 10..=11 {
+            coordinates.push((x, y));
+        }
+        for y in -9..=-8 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for x in -10 - 25..=-9 - 25 {
+        for y in -9..=11 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for x in 9 - 25..=10 - 25 {
+        for y in -9..=-3 {
+            coordinates.push((x, y));
+        }
+        for y in 3..=11 {
+            coordinates.push((x, y));
+        }
+    }
+
+    // mentos room
+    for x in -10 + 25..=10 + 25 {
+        for y in 10..=11 {
+            coordinates.push((x, y));
+        }
+        for y in -9..=-8 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for x in -10 + 25..=-9 + 25 {
+        for y in -9..=-3 {
+            coordinates.push((x, y));
+        }
+        for y in 3..=11 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for x in 9 + 25..=10 + 25 {
+        for y in -9..=11 {
+            coordinates.push((x, y));
+        }
+    }
+
+    // hallways
+    for x in -15..=-10 {
+        for y in 3..=4 {
+            coordinates.push((x, y));
+        }
+        for y in -4..=-3 {
+            coordinates.push((x, y));
+        }
+    }
+    for x in -15..=-10 {
+        for y in 3..=4 {
+            coordinates.push((x, y));
+        }
+        for y in -4..=-3 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for x in 10..=15 {
+        for y in 3..=4 {
+            coordinates.push((x, y));
+        }
+        for y in -4..=-3 {
+            coordinates.push((x, y));
+        }
+    }
+    for x in 10..=15 {
+        for y in 3..=4 {
+            coordinates.push((x, y));
+        }
+        for y in -4..=-3 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for coordinate in coordinates {
+        spawn_wall_tile(
+            &mut commands,
+            &asset_server,
+            Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
+        );
+    }
+}
+
+fn spawn_wall_tile(commands: &mut Commands, asset_server: &Res<AssetServer>, position: Transform) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("wall_tile.png"),
+            transform: position,
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Tiles)
+                .with_mask(Layer::Player),
+        );
+}
+
+fn spawn_lava_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
+    let mut coordinates = Vec::new();
+    for x in -8..=8 {
+        for y in 4..=5 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for coordinate in coordinates {
+        spawn_lava_tile(
+            &mut commands,
+            &asset_server,
+            Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
+        );
+    }
+}
+
+fn spawn_lava_tile(commands: &mut Commands, asset_server: &Res<AssetServer>, position: Transform) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("lava_tile.png"),
+            transform: position,
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Tiles)
+                .with_mask(Layer::Player),
+        );
 }
 
 #[derive(Component)]
@@ -509,7 +719,7 @@ fn handle_mentos_said_event(
 
 fn explode_mentos(
     mut commands: Commands,
-    asset_server: Res<AssetServer>,
+    //asset_server: Res<AssetServer>,
     mut mentos_query: Query<(Entity, &Transform, &mut Velocity), With<Mentos>>,
     soda_query: Query<&Transform, With<Soda>>,
 ) {
@@ -519,7 +729,7 @@ fn explode_mentos(
         let distance = difference.length();
         if distance < 20.0 {
             commands.entity(mentos).despawn_recursive();
-            spawn_rope_coil(commands, asset_server)
+            //spawn_rope_coil(commands, asset_server)
         } else {
             let new_velocity = difference.normalize() * MENTOS_SPEED;
             *mentos_velocity = Velocity::from_linear(new_velocity);
