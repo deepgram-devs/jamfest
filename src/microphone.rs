@@ -147,6 +147,14 @@ fn handle_asr(
                     info!("Sending mentos speech event.");
                     speech_events.send(SpeechEvent::Mentos);
                 }
+                if message.contains("mentors") {
+                    info!("Sending mentos speech event.");
+                    speech_events.send(SpeechEvent::Mentos);
+                }
+                if message.contains("mentor") {
+                    info!("Sending mentos speech event.");
+                    speech_events.send(SpeechEvent::Mentos);
+                }
                 if message.contains("bridge") {
                     info!("Sending bridge speech event.");
                     speech_events.send(SpeechEvent::Bridge);

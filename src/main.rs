@@ -11,15 +11,15 @@ const PLAYER_SPEED: f32 = 100.0;
 const WOODEN_SIGN_JAM_X: f32 = -400.0;
 const WOODEN_SIGN_JAM_Y: f32 = -10.0;
 const BLUEBERRY_BASKET_X: f32 = -380.0;
-const BLUEBERRY_BASKET_Y: f32 = 20.0;
+const BLUEBERRY_BASKET_Y: f32 = 30.0;
 const SUGAR_BAG_X: f32 = -420.0;
-const SUGAR_BAG_Y: f32 = 20.0;
+const SUGAR_BAG_Y: f32 = 30.0;
 const JAM_JAR_X: f32 = -400.0;
-const JAM_JAR_Y: f32 = 20.0;
-const BEAR_X: f32 = -370.0;
-const BEAR_Y: f32 = 50.0;
-const WOODEN_PLANKS_X: f32 = -370.0;
-const WOODEN_PLANKS_Y: f32 = 50.0;
+const JAM_JAR_Y: f32 = 30.0;
+const BEAR_X: f32 = -360.0;
+const BEAR_Y: f32 = 80.0;
+const WOODEN_PLANKS_X: f32 = -360.0;
+const WOODEN_PLANKS_Y: f32 = 70.0;
 
 // coordinates of objects in the mentos room
 const WOODEN_SIGN_MENTOS_X: f32 = 500.0;
@@ -27,10 +27,13 @@ const WOODEN_SIGN_MENTOS_Y: f32 = 70.0;
 const COLA_X: f32 = 400.0;
 const COLA_Y: f32 = 70.0;
 const MENTOS_INITIAL_X: f32 = 400.0;
-const MENTOS_INITIAL_Y: f32 = 170.0;
-const MENTOS_SPEED: f32 = -20.0;
+const MENTOS_INITIAL_Y: f32 = 140.0;
+const MENTOS_SPEED: f32 = -15.0;
 const ROPE_INITIAL_X: f32 = 425.0;
 const ROPE_INITIAL_Y: f32 = 174.0;
+const ROPE_FINAL_X: f32 = 425.0;
+const ROPE_FINAL_Y: f32 = 130.0;
+const ROPE_DROP_SPEED: f32 = -60.0;
 const BULLSEYE_X: f32 = 400.0;
 const BULLSEYE_Y: f32 = 174.0;
 
@@ -68,6 +71,7 @@ struct GameState {
     sugar_puzzle_completed: bool,
     wooden_planks_collected: bool,
     rope_coil_collected: bool,
+    bullseye_just_hit: bool,
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -112,6 +116,7 @@ fn main() {
     .add_system(handle_mentos_said_event)
     .add_system(handle_rope_coil_collected_event)
     .add_system(explode_mentos)
+    .add_system(drop_rope)
     .add_system(handle_wooden_planks_collected_event)
     .add_system(move_bear_to_jam_jar)
     .add_system(cook_jam);
@@ -127,19 +132,16 @@ pub(crate) struct Player;
 
 // NOTE: we are using a Dynamic body because it... works
 // but normally one would "move and slide" a Kinematic body in other engines...
-fn spawn_player(mut commands: Commands) {
+fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(1.0, 1.0, 1.0),
-                ..default()
-            },
-            transform: Transform::from_xyz(0.0, -40.0, 1.0).with_scale(Vec3::splat(16.0)),
+            texture: asset_server.load("bear_player.png"),
+            transform: Transform::from_xyz(0.0, -60.0, 1.0).with_scale(Vec3::splat(2.0)),
             ..default()
         })
         .insert(RigidBody::Dynamic)
         .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            half_extends: Vec3::new(16.0, 16.0, 1.0),
             border_radius: None,
         })
         .insert(Velocity::from_linear(Vec3::ZERO))
@@ -253,11 +255,12 @@ fn spawn_rope_coil(mut commands: Commands, asset_server: Res<AssetServer>) {
             transform: Transform::from_xyz(ROPE_INITIAL_X, ROPE_INITIAL_Y, 1.0),
             ..default()
         })
-        .insert(RigidBody::Sensor)
+        .insert(RigidBody::KinematicVelocityBased)
         .insert(CollisionShape::Cuboid {
             half_extends: Vec3::new(8.0, 16.0, 1.0),
             border_radius: None,
         })
+        .insert(Velocity::from_linear(Vec3::ZERO))
         .insert(
             CollisionLayers::none()
                 .with_group(Layer::Items)
@@ -315,16 +318,12 @@ fn spawn_soda(mut commands: Commands, asset_server: Res<AssetServer>) {
 #[derive(Component)]
 pub(crate) struct Mentos;
 
-fn spawn_mentos(mut commands: Commands, _asset_server: Res<AssetServer>) {
+fn spawn_mentos(mut commands: Commands, asset_server: Res<AssetServer>) {
+    info!("Spawning mentos.");
     commands
         .spawn_bundle(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(0.75, 0.75, 0.75),
-                ..default()
-            },
-            // texture: asset_server.load("sugar_bag.png"),
-            transform: Transform::from_xyz(MENTOS_INITIAL_X, MENTOS_INITIAL_Y, 1.0)
-                .with_scale(Vec3::new(4.0, 16.0, 1.0)),
+            texture: asset_server.load("mint_package.png"),
+            transform: Transform::from_xyz(MENTOS_INITIAL_X, MENTOS_INITIAL_Y, 1.0),
             ..default()
         })
         .insert(RigidBody::KinematicVelocityBased)
@@ -356,7 +355,7 @@ fn spawn_wooden_signs(mut commands: Commands, asset_server: Res<AssetServer>) {
         &mut commands,
         &asset_server,
         Transform::from_xyz(WOODEN_SIGN_MENTOS_X, WOODEN_SIGN_MENTOS_Y, 1.0),
-        "Say mentos.",
+        "Pop the bottle cap to hit the bullseye. What could you mix with the soda to do this?",
     );
 
     spawn_wooden_sign(
@@ -620,21 +619,17 @@ fn spawn_jam_jar(commands: &mut Commands, asset_server: Res<AssetServer>) {
 #[derive(Component)]
 pub(crate) struct Bear;
 
-fn spawn_bear(mut commands: Commands) {
+fn spawn_bear(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
-        // TODO use an actual bear sprite
         .spawn_bundle(SpriteBundle {
-            sprite: Sprite {
-                color: Color::rgb(0.5, 0.5, 0.5),
-                ..default()
-            },
-            transform: Transform::from_xyz(BEAR_X, BEAR_Y, 2.0).with_scale(Vec3::splat(8.0)),
+            texture: asset_server.load("bear_npc.png"),
+            transform: Transform::from_xyz(BEAR_X, BEAR_Y, 1.0).with_scale(Vec3::splat(2.0)),
             ..default()
         })
         .insert(RigidBody::Dynamic)
         .insert(Velocity::from_linear(Vec3::ZERO))
         .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            half_extends: Vec3::new(16.0, 16.0, 1.0),
             border_radius: None,
         })
         .insert(
@@ -669,7 +664,7 @@ fn handle_sugar_said_event(
     if player_transform
         .translation
         .distance(blueberry_basket_transform.translation)
-        < 50.0
+        < 200.0
     {
         let sugar_said = speech_events
             .iter()
@@ -701,7 +696,7 @@ fn handle_mentos_said_event(
     if player_transform
         .translation
         .distance(soda_transform.translation)
-        < 50.0
+        < 200.0
     {
         let mentos_said = speech_events
             .iter()
@@ -717,7 +712,7 @@ fn handle_mentos_said_event(
 
 fn explode_mentos(
     mut commands: Commands,
-    //asset_server: Res<AssetServer>,
+    mut game_state: ResMut<GameState>,
     mut mentos_query: Query<(Entity, &Transform, &mut Velocity), With<Mentos>>,
     soda_query: Query<&Transform, With<Soda>>,
 ) {
@@ -727,10 +722,33 @@ fn explode_mentos(
         let distance = difference.length();
         if distance < 20.0 {
             commands.entity(mentos).despawn_recursive();
-            //spawn_rope_coil(commands, asset_server)
+            info!("Setting bullseye_just_hit to true.");
+            game_state.bullseye_just_hit = true;
         } else {
             let new_velocity = difference.normalize() * MENTOS_SPEED;
             *mentos_velocity = Velocity::from_linear(new_velocity);
+        }
+    }
+}
+
+fn drop_rope(
+    mut game_state: ResMut<GameState>,
+    mut rope_coil_query: Query<(&Transform, &mut Velocity), With<RopeCoil>>,
+) {
+    if !game_state.bullseye_just_hit {
+        return;
+    }
+
+    if let Ok((rope_coil_transform, mut rope_coil_velocity)) = rope_coil_query.get_single_mut() {
+        let difference =
+            rope_coil_transform.translation - Vec3::new(ROPE_FINAL_X, ROPE_FINAL_Y, 1.0);
+        let distance = difference.length();
+        if distance < 5.0 {
+            *rope_coil_velocity = Velocity::from_linear(Vec3::ZERO);
+            game_state.bullseye_just_hit = false;
+        } else {
+            let new_velocity = difference.normalize() * ROPE_DROP_SPEED;
+            *rope_coil_velocity = Velocity::from_linear(new_velocity);
         }
     }
 }
