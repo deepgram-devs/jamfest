@@ -40,8 +40,8 @@ const BULLSEYE_Y: f32 = 174.0;
 // coordinates of objects in the bridge room
 const WOODEN_SIGN_BRIDGE_X: f32 = 0.0;
 const WOODEN_SIGN_BRIDGE_Y: f32 = -10.0;
-// BRIDGE_X
-// BRIDGE_Y
+const WOODEN_BRIDGE_X: f32 = 0.0;
+const WOODEN_BRIDGE_Y: f32 = 72.0;
 const TREASURE_CHEST_X: f32 = 0.0;
 const TREASURE_CHEST_Y: f32 = 120.0;
 
@@ -69,9 +69,11 @@ struct JamStartTimer(Timer);
 struct GameState {
     mentos_puzzle_completed: bool,
     sugar_puzzle_completed: bool,
+    bridge_puzzle_completed: bool,
     wooden_planks_collected: bool,
     rope_coil_collected: bool,
     bullseye_just_hit: bool,
+    treasure_chest_opened: bool,
 }
 
 fn setup_camera(mut commands: Commands) {
@@ -115,12 +117,14 @@ fn main() {
     .add_event::<SpeechEvent>()
     .add_system(handle_sugar_said_event)
     .add_system(handle_mentos_said_event)
+    .add_system(handle_bridge_said_event)
     .add_system(handle_rope_coil_collected_event)
     .add_system(explode_mentos)
     .add_system(drop_rope)
     .add_system(handle_wooden_planks_collected_event)
     .add_system(move_bear_to_jam_jar)
-    .add_system(cook_jam);
+    .add_system(cook_jam)
+    .add_system(check_treasure_chest_proximity);
 
     #[cfg(feature = "deepgram")]
     app.add_plugin(microphone::MicrophonePlugin);
@@ -137,7 +141,7 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("bear_player_1.png"),
-            transform: Transform::from_xyz(0.0, -60.0, 1.0),
+            transform: Transform::from_xyz(0.0, -60.0, 3.0),
             ..default()
         })
         .insert(RigidBody::Dynamic)
@@ -300,6 +304,26 @@ fn spawn_treasure_chest(mut commands: Commands, asset_server: Res<AssetServer>) 
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("treasure_chest_closed.png"),
+            transform: Transform::from_xyz(TREASURE_CHEST_X, TREASURE_CHEST_Y, 1.0),
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Player),
+        )
+        .insert(TreasureChest);
+}
+
+fn spawn_opened_treasure_chest(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("treasure_chest_opened.png"),
             transform: Transform::from_xyz(TREASURE_CHEST_X, TREASURE_CHEST_Y, 1.0),
             ..default()
         })
@@ -678,27 +702,33 @@ fn spawn_lava_tile_tracked(
         .insert(LavaTileTracked);
 }
 
+fn spawn_lava_tiles_non_collidable(commands: &mut Commands, asset_server: &Res<AssetServer>) {
+    let mut coordinates = Vec::new();
+    for x in -1..=1 {
+        for y in 4..=5 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for coordinate in coordinates {
+        spawn_lava_tile_non_collidable(
+            commands,
+            &asset_server,
+            Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
+        );
+    }
+}
+
 fn spawn_lava_tile_non_collidable(
     commands: &mut Commands,
     asset_server: &Res<AssetServer>,
     position: Transform,
 ) {
-    commands
-        .spawn_bundle(SpriteBundle {
-            texture: asset_server.load("lava_tile.png"),
-            transform: position,
-            ..default()
-        })
-        .insert(RigidBody::Static)
-        .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(8.0, 8.0, 1.0),
-            border_radius: None,
-        })
-        .insert(
-            CollisionLayers::none()
-                .with_group(Layer::Tiles)
-                .with_mask(Layer::Player),
-        );
+    commands.spawn_bundle(SpriteBundle {
+        texture: asset_server.load("lava_tile.png"),
+        transform: position,
+        ..default()
+    });
 }
 
 #[derive(Component)]
@@ -748,6 +778,19 @@ fn spawn_jam_jar(commands: &mut Commands, asset_server: Res<AssetServer>) {
 }
 
 #[derive(Component)]
+pub(crate) struct WoodenBridge;
+
+fn spawn_wooden_bridge(commands: &mut Commands, asset_server: &Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("wooden_bridge.png"),
+            transform: Transform::from_xyz(WOODEN_BRIDGE_X, WOODEN_BRIDGE_Y, 2.0),
+            ..default()
+        })
+        .insert(WoodenBridge);
+}
+
+#[derive(Component)]
 pub(crate) struct Bear;
 
 fn spawn_bear(mut commands: Commands, asset_server: Res<AssetServer>) {
@@ -775,6 +818,88 @@ fn spawn_bear(mut commands: Commands, asset_server: Res<AssetServer>) {
             ..Default::default()
         })
         .insert(Bear);
+}
+
+fn handle_bridge_said_event(
+    mut speech_events: EventReader<SpeechEvent>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    mut game_state: ResMut<GameState>,
+    player_query: Query<&Transform, With<Player>>,
+    treasure_chest_query: Query<&Transform, With<TreasureChest>>,
+    lava_tile_tracked_query: Query<Entity, With<LavaTileTracked>>,
+) {
+    if game_state.bridge_puzzle_completed
+        || !game_state.rope_coil_collected
+        || !game_state.wooden_planks_collected
+    {
+        return;
+    }
+
+    let player_transform = player_query.single();
+    let treasure_chest_transform = treasure_chest_query.single();
+
+    if player_transform
+        .translation
+        .distance(treasure_chest_transform.translation)
+        < 200.0
+    {
+        let bridge_said = speech_events
+            .iter()
+            .any(|event| *event == SpeechEvent::Bridge);
+        if bridge_said {
+            info!("You said bridge!");
+            spawn_wooden_bridge(&mut commands, &asset_server);
+            despawn_lava_tiles_tracked(&mut commands, lava_tile_tracked_query);
+            spawn_lava_tiles_non_collidable(&mut commands, &asset_server);
+            game_state.bridge_puzzle_completed = true;
+        }
+        speech_events.clear();
+    }
+}
+
+fn despawn_lava_tiles_tracked(
+    commands: &mut Commands,
+    lava_tile_tracked_query: Query<Entity, With<LavaTileTracked>>,
+) {
+    for lava_tile in lava_tile_tracked_query.iter() {
+        info!("Despawning a tracked lava tile!");
+        commands.entity(lava_tile).despawn_recursive();
+    }
+}
+
+fn check_treasure_chest_proximity(
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    player_query: Query<&Transform, With<Player>>,
+    treasure_chest_query: Query<(Entity, &Transform), With<TreasureChest>>,
+    mut game_state: ResMut<GameState>,
+) {
+    if game_state.treasure_chest_opened {
+        return;
+    }
+
+    let player_transform = player_query.single();
+    let (_, treasure_chest_transform) = treasure_chest_query.single();
+
+    if player_transform
+        .translation
+        .distance(treasure_chest_transform.translation)
+        < 40.0
+    {
+        despawn_treasure_chest(&mut commands, treasure_chest_query);
+        spawn_win_text(&mut commands, &asset_server);
+        spawn_opened_treasure_chest(commands, asset_server);
+        game_state.treasure_chest_opened = true;
+    }
+}
+
+fn despawn_treasure_chest(
+    commands: &mut Commands,
+    treasure_chest_query: Query<(Entity, &Transform), With<TreasureChest>>,
+) {
+    let (treasure_chest_entity, _) = treasure_chest_query.single();
+    commands.entity(treasure_chest_entity).despawn_recursive();
 }
 
 fn handle_sugar_said_event(
@@ -1015,6 +1140,34 @@ fn spawn_puzzle_text(commands: &mut Commands, asset_server: Res<AssetServer>, te
             }),
         )
         .insert(PuzzleText);
+}
+
+fn spawn_win_text(commands: &mut Commands, asset_server: &Res<AssetServer>) {
+    commands.spawn_bundle(
+        TextBundle::from_sections([TextSection::new(
+            "YOU WIN!",
+            TextStyle {
+                font: asset_server.load("kongtext.ttf"),
+                font_size: 32.0,
+                color: Color::WHITE,
+            },
+        )])
+        // centering the text in the way we'd like was quite difficult
+        // and might be worth more thought
+        .with_style(Style {
+            align_self: AlignSelf::FlexStart,
+            justify_content: JustifyContent::Center,
+
+            margin: UiRect {
+                left: Val::Auto,
+                right: Val::Auto,
+                top: Val::Auto,
+                bottom: Val::Auto,
+            },
+
+            ..default()
+        }),
+    );
 }
 
 fn handle_rope_coil_collected_event(
