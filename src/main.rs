@@ -311,7 +311,7 @@ fn spawn_treasure_chest(mut commands: Commands, asset_server: Res<AssetServer>) 
         .insert(
             CollisionLayers::none()
                 .with_group(Layer::Items)
-                .with_mask(Layer::Items),
+                .with_mask(Layer::Player),
         )
         .insert(TreasureChest);
 }
@@ -589,9 +589,22 @@ fn spawn_wall_tile(commands: &mut Commands, asset_server: &Res<AssetServer>, pos
         );
 }
 
+// We will use this as a hack to keep track of which lava tiles we will replace with
+// non-collidable lava tiles. This is how we will simulate walking over the bridge
+// when it appears. There is certainly a better way to do this.
+#[derive(Component)]
+pub(crate) struct LavaTileTracked;
+
 fn spawn_lava_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
+    // non-tracked tiles
     let mut coordinates = Vec::new();
-    for x in -8..=8 {
+    for x in -8..=-2 {
+        for y in 4..=5 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for x in 2..=8 {
         for y in 4..=5 {
             coordinates.push((x, y));
         }
@@ -604,9 +617,72 @@ fn spawn_lava_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
             Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
         );
     }
+
+    // tracked tiles
+    let mut coordinates = Vec::new();
+    for x in -1..=1 {
+        for y in 4..=5 {
+            coordinates.push((x, y));
+        }
+    }
+
+    for coordinate in coordinates {
+        spawn_lava_tile_tracked(
+            &mut commands,
+            &asset_server,
+            Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
+        );
+    }
 }
 
 fn spawn_lava_tile(commands: &mut Commands, asset_server: &Res<AssetServer>, position: Transform) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("lava_tile.png"),
+            transform: position,
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Tiles)
+                .with_mask(Layer::Player),
+        );
+}
+
+fn spawn_lava_tile_tracked(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    position: Transform,
+) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("lava_tile.png"),
+            transform: position,
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Tiles)
+                .with_mask(Layer::Player),
+        )
+        .insert(LavaTileTracked);
+}
+
+fn spawn_lava_tile_non_collidable(
+    commands: &mut Commands,
+    asset_server: &Res<AssetServer>,
+    position: Transform,
+) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("lava_tile.png"),
