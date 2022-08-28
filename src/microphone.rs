@@ -132,6 +132,10 @@ fn handle_asr(
     mut speech_events: EventWriter<SpeechEvent>,
 ) {
     if let Some(client) = &mut deepgram_websocket.client {
+        if client.status() != wasm_sockets::ConnectionStatus::Connected {
+            return;
+        }
+
         while let Ok(audio_buffer) = microphone_receiver.rx.try_recv() {
             client.send_binary(to_vec_u8(audio_buffer)).unwrap();
         }
