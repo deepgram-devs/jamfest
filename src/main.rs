@@ -135,8 +135,8 @@ pub(crate) struct Player;
 fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
-            texture: asset_server.load("bear_player.png"),
-            transform: Transform::from_xyz(0.0, -60.0, 1.0).with_scale(Vec3::splat(2.0)),
+            texture: asset_server.load("bear_player_1.png"),
+            transform: Transform::from_xyz(0.0, -60.0, 1.0),
             ..default()
         })
         .insert(RigidBody::Dynamic)
@@ -313,6 +313,37 @@ fn spawn_soda(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .with_mask(Layer::Player),
         )
         .insert(Soda);
+}
+
+fn despawn_soda(
+    commands: &mut Commands,
+    soda_bottle_query: Query<(Entity, &Transform), With<Soda>>,
+) {
+    let (soda_bottle_entity, _soda_bottle_transform) = soda_bottle_query.single();
+    commands.entity(soda_bottle_entity).despawn_recursive();
+}
+
+#[derive(Component)]
+pub(crate) struct EmptySoda;
+
+fn spawn_empty_soda(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("soda_bottle_empty.png"),
+            transform: Transform::from_xyz(COLA_X, COLA_Y, 1.0),
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 16.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Player),
+        )
+        .insert(EmptySoda);
 }
 
 #[derive(Component)]
@@ -622,8 +653,8 @@ pub(crate) struct Bear;
 fn spawn_bear(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
-            texture: asset_server.load("bear_npc.png"),
-            transform: Transform::from_xyz(BEAR_X, BEAR_Y, 1.0).with_scale(Vec3::splat(2.0)),
+            texture: asset_server.load("bear_npc_1.png"),
+            transform: Transform::from_xyz(BEAR_X, BEAR_Y, 1.0),
             ..default()
         })
         .insert(RigidBody::Dynamic)
@@ -712,18 +743,21 @@ fn handle_mentos_said_event(
 
 fn explode_mentos(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut game_state: ResMut<GameState>,
     mut mentos_query: Query<(Entity, &Transform, &mut Velocity), With<Mentos>>,
-    soda_query: Query<&Transform, With<Soda>>,
+    soda_query: Query<(Entity, &Transform), With<Soda>>,
 ) {
     if let Ok((mentos, mentos_transform, mut mentos_velocity)) = mentos_query.get_single_mut() {
-        let soda = soda_query.single();
-        let difference = mentos_transform.translation - soda.translation;
+        let (_soda_entity, soda_transform) = soda_query.single();
+        let difference = mentos_transform.translation - soda_transform.translation;
         let distance = difference.length();
         if distance < 20.0 {
             commands.entity(mentos).despawn_recursive();
             info!("Setting bullseye_just_hit to true.");
             game_state.bullseye_just_hit = true;
+            despawn_soda(&mut commands, soda_query);
+            spawn_empty_soda(commands, asset_server);
         } else {
             let new_velocity = difference.normalize() * MENTOS_SPEED;
             *mentos_velocity = Velocity::from_linear(new_velocity);
