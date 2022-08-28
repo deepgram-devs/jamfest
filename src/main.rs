@@ -42,8 +42,8 @@ const WOODEN_SIGN_BRIDGE_X: f32 = 0.0;
 const WOODEN_SIGN_BRIDGE_Y: f32 = -10.0;
 // BRIDGE_X
 // BRIDGE_Y
-// GOAL_X
-// GOAL_Y
+const TREASURE_CHEST_X: f32 = 0.0;
+const TREASURE_CHEST_Y: f32 = 120.0;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpeechEvent {
@@ -108,6 +108,7 @@ fn main() {
     .add_startup_system(spawn_soda)
     .add_startup_system(spawn_rope_coil)
     .add_startup_system(spawn_bullseye)
+    .add_startup_system(spawn_treasure_chest)
     .add_startup_system(spawn_wooden_signs)
     .add_system(puzzle_sign_system)
     .add_startup_system(setup_camera)
@@ -281,7 +282,7 @@ fn spawn_bullseye(mut commands: Commands, asset_server: Res<AssetServer>) {
         })
         .insert(RigidBody::Sensor)
         .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(8.0, 16.0, 1.0),
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
             border_radius: None,
         })
         .insert(
@@ -290,6 +291,29 @@ fn spawn_bullseye(mut commands: Commands, asset_server: Res<AssetServer>) {
                 .with_mask(Layer::Items),
         )
         .insert(Bullseye);
+}
+
+#[derive(Component)]
+pub(crate) struct TreasureChest;
+
+fn spawn_treasure_chest(mut commands: Commands, asset_server: Res<AssetServer>) {
+    commands
+        .spawn_bundle(SpriteBundle {
+            texture: asset_server.load("treasure_chest_closed.png"),
+            transform: Transform::from_xyz(TREASURE_CHEST_X, TREASURE_CHEST_Y, 1.0),
+            ..default()
+        })
+        .insert(RigidBody::Static)
+        .insert(CollisionShape::Cuboid {
+            half_extends: Vec3::new(8.0, 8.0, 1.0),
+            border_radius: None,
+        })
+        .insert(
+            CollisionLayers::none()
+                .with_group(Layer::Items)
+                .with_mask(Layer::Items),
+        )
+        .insert(TreasureChest);
 }
 
 #[derive(Component)]
@@ -393,7 +417,7 @@ fn spawn_wooden_signs(mut commands: Commands, asset_server: Res<AssetServer>) {
         &mut commands,
         &asset_server,
         Transform::from_xyz(WOODEN_SIGN_BRIDGE_X, WOODEN_SIGN_BRIDGE_Y, 1.0),
-        "Say bridge.",
+        "To get the treasure, find some rope and some wood. Then tell me what you can make with them to cross the lava.",
     );
 }
 
