@@ -1,19 +1,29 @@
 use bevy::prelude::*;
 use heron::prelude::*;
 
-use std::time::Duration;
-
 const X_RESOLUTION: f32 = 640.0;
 const Y_RESOLUTION: f32 = 480.0;
 const PLAYER_SPEED: f32 = 100.0;
 
+// z-values
+const Z_WOODEN_SIGN: f32 = 4.0;
+const Z_PLAYER: f32 = 3.0;
+const Z_BLUEBERRY_BASKET: f32 = 3.0;
+const Z_SUGAR_BAG: f32 = 3.0;
+const Z_WOODEN_PLANKS: f32 = 3.0;
+const Z_BEAR: f32 = 4.0;
+const Z_JAM_JAR: f32 = 5.0;
+const Z_BRIDGE: f32 = 2.0;
+const Z_LAVA_TILES: f32 = 1.0;
+
 // coordinates of objects in the jam room
 const WOODEN_SIGN_JAM_X: f32 = -400.0;
 const WOODEN_SIGN_JAM_Y: f32 = -10.0;
-const BLUEBERRY_BASKET_X: f32 = -380.0;
+const BLUEBERRY_BASKET_X: f32 = -400.0;
 const BLUEBERRY_BASKET_Y: f32 = 30.0;
-const SUGAR_BAG_X: f32 = -420.0;
-const SUGAR_BAG_Y: f32 = 30.0;
+const SUGAR_BAG_INITIAL_X: f32 = -400.0;
+const SUGAR_BAG_INITIAL_Y: f32 = 70.0;
+const SUGAR_BAG_SPEED: f32 = -15.0;
 const JAM_JAR_X: f32 = -400.0;
 const JAM_JAR_Y: f32 = 30.0;
 const BEAR_X: f32 = -360.0;
@@ -63,12 +73,10 @@ enum Layer {
 }
 
 #[derive(Default)]
-struct JamStartTimer(Timer);
-
-#[derive(Default)]
 struct GameState {
     mentos_puzzle_completed: bool,
     sugar_puzzle_completed: bool,
+    jam_created: bool,
     bridge_puzzle_completed: bool,
     wooden_planks_collected: bool,
     rope_coil_collected: bool,
@@ -97,7 +105,6 @@ fn main() {
     .insert_resource(GameState::default())
     .add_plugins(DefaultPlugins)
     .add_plugin(PhysicsPlugin::default())
-    .insert_resource(JamStartTimer(Timer::new(Duration::from_secs(2), false)))
     .insert_resource(Gravity::from(Vec3::new(0.0, 0.0, 0.0)))
     .add_startup_system(spawn_wall_tiles)
     .add_startup_system(spawn_lava_tiles)
@@ -123,7 +130,7 @@ fn main() {
     .add_system(drop_rope)
     .add_system(handle_wooden_planks_collected_event)
     .add_system(move_bear_to_jam_jar)
-    .add_system(cook_jam)
+    .add_system(drop_sugar)
     .add_system(check_treasure_chest_proximity);
 
     #[cfg(feature = "deepgram")]
@@ -141,7 +148,7 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("bear_player_1.png"),
-            transform: Transform::from_xyz(0.0, -60.0, 3.0),
+            transform: Transform::from_xyz(0.0, -60.0, Z_PLAYER),
             ..default()
         })
         .insert(RigidBody::Dynamic)
@@ -211,7 +218,11 @@ fn spawn_blueberry_basket(mut commands: Commands, asset_server: Res<AssetServer>
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("blueberry_basket.png"),
-            transform: Transform::from_xyz(BLUEBERRY_BASKET_X, BLUEBERRY_BASKET_Y, 1.0),
+            transform: Transform::from_xyz(
+                BLUEBERRY_BASKET_X,
+                BLUEBERRY_BASKET_Y,
+                Z_BLUEBERRY_BASKET,
+            ),
             ..default()
         })
         .insert(RigidBody::Static)
@@ -234,7 +245,7 @@ fn spawn_wooden_planks(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("wooden_planks.png"),
-            transform: Transform::from_xyz(WOODEN_PLANKS_X, WOODEN_PLANKS_Y, 1.0),
+            transform: Transform::from_xyz(WOODEN_PLANKS_X, WOODEN_PLANKS_Y, Z_WOODEN_PLANKS),
             ..default()
         })
         .insert(RigidBody::Sensor)
@@ -352,7 +363,7 @@ fn spawn_soda(mut commands: Commands, asset_server: Res<AssetServer>) {
         })
         .insert(RigidBody::Static)
         .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(8.0, 16.0, 1.0),
+            half_extends: Vec3::new(8.0, 20.0, 1.0),
             border_radius: None,
         })
         .insert(
@@ -383,7 +394,7 @@ fn spawn_empty_soda(mut commands: Commands, asset_server: Res<AssetServer>) {
         })
         .insert(RigidBody::Static)
         .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(8.0, 16.0, 1.0),
+            half_extends: Vec3::new(8.0, 20.0, 1.0),
             border_radius: None,
         })
         .insert(
@@ -426,21 +437,21 @@ fn spawn_wooden_signs(mut commands: Commands, asset_server: Res<AssetServer>) {
     spawn_wooden_sign(
         &mut commands,
         &asset_server,
-        Transform::from_xyz(WOODEN_SIGN_JAM_X, WOODEN_SIGN_JAM_Y, 1.0),
+        Transform::from_xyz(WOODEN_SIGN_JAM_X, WOODEN_SIGN_JAM_Y, Z_WOODEN_SIGN),
         "The bear is hungry and would like some jam. Here are some blueberries, what else do you need to make jam?",
     );
 
     spawn_wooden_sign(
         &mut commands,
         &asset_server,
-        Transform::from_xyz(WOODEN_SIGN_MENTOS_X, WOODEN_SIGN_MENTOS_Y, 1.0),
+        Transform::from_xyz(WOODEN_SIGN_MENTOS_X, WOODEN_SIGN_MENTOS_Y, Z_WOODEN_SIGN),
         "Pop the bottle cap to hit the bullseye. What could you mix with the soda to do this?",
     );
 
     spawn_wooden_sign(
         &mut commands,
         &asset_server,
-        Transform::from_xyz(WOODEN_SIGN_BRIDGE_X, WOODEN_SIGN_BRIDGE_Y, 1.0),
+        Transform::from_xyz(WOODEN_SIGN_BRIDGE_X, WOODEN_SIGN_BRIDGE_Y, Z_WOODEN_SIGN),
         "To get the treasure, find some rope and some wood. Then tell me what you can make with them to cross the lava.",
     );
 }
@@ -459,7 +470,7 @@ fn spawn_wooden_sign(
         })
         .insert(RigidBody::Static)
         .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(3.0, 12.0, 1.0),
+            half_extends: Vec3::new(3.0, 16.0, 1.0),
             border_radius: None,
         })
         .insert(
@@ -589,7 +600,11 @@ fn spawn_wall_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
         spawn_wall_tile(
             &mut commands,
             &asset_server,
-            Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
+            Transform::from_xyz(
+                coordinate.0 as f32 * 16.0,
+                coordinate.1 as f32 * 16.0,
+                Z_LAVA_TILES,
+            ),
         );
     }
 }
@@ -638,7 +653,11 @@ fn spawn_lava_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
         spawn_lava_tile(
             &mut commands,
             &asset_server,
-            Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
+            Transform::from_xyz(
+                coordinate.0 as f32 * 16.0,
+                coordinate.1 as f32 * 16.0,
+                Z_LAVA_TILES,
+            ),
         );
     }
 
@@ -654,7 +673,11 @@ fn spawn_lava_tiles(mut commands: Commands, asset_server: Res<AssetServer>) {
         spawn_lava_tile_tracked(
             &mut commands,
             &asset_server,
-            Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
+            Transform::from_xyz(
+                coordinate.0 as f32 * 16.0,
+                coordinate.1 as f32 * 16.0,
+                Z_LAVA_TILES,
+            ),
         );
     }
 }
@@ -714,7 +737,11 @@ fn spawn_lava_tiles_non_collidable(commands: &mut Commands, asset_server: &Res<A
         spawn_lava_tile_non_collidable(
             commands,
             &asset_server,
-            Transform::from_xyz(coordinate.0 as f32 * 16.0, coordinate.1 as f32 * 16.0, 1.0),
+            Transform::from_xyz(
+                coordinate.0 as f32 * 16.0,
+                coordinate.1 as f32 * 16.0,
+                Z_LAVA_TILES,
+            ),
         );
     }
 }
@@ -738,10 +765,11 @@ fn spawn_sugar_bag(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("sugar_bag.png"),
-            transform: Transform::from_xyz(SUGAR_BAG_X, SUGAR_BAG_Y, 1.0),
+            transform: Transform::from_xyz(SUGAR_BAG_INITIAL_X, SUGAR_BAG_INITIAL_Y, Z_SUGAR_BAG),
             ..default()
         })
-        .insert(RigidBody::Static)
+        .insert(RigidBody::KinematicVelocityBased)
+        .insert(Velocity::from_linear(Vec3::ZERO))
         .insert(CollisionShape::Cuboid {
             half_extends: Vec3::new(8.0, 8.0, 1.0),
             border_radius: None,
@@ -761,7 +789,7 @@ fn spawn_jam_jar(commands: &mut Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("jam_jar.png"),
-            transform: Transform::from_xyz(JAM_JAR_X, JAM_JAR_Y, 1.0),
+            transform: Transform::from_xyz(JAM_JAR_X, JAM_JAR_Y, Z_JAM_JAR),
             ..default()
         })
         .insert(RigidBody::Static)
@@ -784,7 +812,7 @@ fn spawn_wooden_bridge(commands: &mut Commands, asset_server: &Res<AssetServer>)
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("wooden_bridge.png"),
-            transform: Transform::from_xyz(WOODEN_BRIDGE_X, WOODEN_BRIDGE_Y, 2.0),
+            transform: Transform::from_xyz(WOODEN_BRIDGE_X, WOODEN_BRIDGE_Y, Z_BRIDGE),
             ..default()
         })
         .insert(WoodenBridge);
@@ -797,7 +825,7 @@ fn spawn_bear(mut commands: Commands, asset_server: Res<AssetServer>) {
     commands
         .spawn_bundle(SpriteBundle {
             texture: asset_server.load("bear_npc_1.png"),
-            transform: Transform::from_xyz(BEAR_X, BEAR_Y, 1.0),
+            transform: Transform::from_xyz(BEAR_X, BEAR_Y, Z_BEAR),
             ..default()
         })
         .insert(RigidBody::Dynamic)
@@ -1012,22 +1040,31 @@ fn drop_rope(
     }
 }
 
-fn cook_jam(
+fn drop_sugar(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
-    game_state: Res<GameState>,
-    mut jam_start_time: ResMut<JamStartTimer>,
-    time: Res<Time>,
-    sugar_bag_query: Query<Entity, With<SugarBag>>,
-    blueberry_basket_query: Query<Entity, With<BlueberryBasket>>,
+    mut game_state: ResMut<GameState>,
+    mut sugar_bag_query: Query<(Entity, &Transform, &mut Velocity), With<SugarBag>>,
+    mut blueberry_basket_query: Query<(Entity, &Transform), With<BlueberryBasket>>,
 ) {
-    if game_state.sugar_puzzle_completed {
-        jam_start_time.0.tick(time.delta());
-        if jam_start_time.0.just_finished() {
-            spawn_jam_jar(&mut commands, asset_server);
-            despawn_sugar_bag(&mut commands, sugar_bag_query);
-            despawn_blueberry_basket(&mut commands, blueberry_basket_query);
-            info!("Spawned jam jar");
+    if !game_state.sugar_puzzle_completed || game_state.jam_created {
+        return;
+    }
+
+    if let Ok((_, sugar_bag_transform, mut sugar_bag_velocity)) = sugar_bag_query.get_single_mut() {
+        if let Ok((_, blueberry_basket_transform)) = blueberry_basket_query.get_single_mut() {
+            let difference =
+                sugar_bag_transform.translation - blueberry_basket_transform.translation;
+            let distance = difference.length();
+            if distance < 5.0 {
+                despawn_sugar_bag(&mut commands, sugar_bag_query);
+                despawn_blueberry_basket(&mut commands, blueberry_basket_query);
+                spawn_jam_jar(&mut commands, asset_server);
+                game_state.jam_created = true;
+            } else {
+                let new_velocity = difference.normalize() * SUGAR_BAG_SPEED;
+                *sugar_bag_velocity = Velocity::from_linear(new_velocity);
+            }
         }
     }
 }
@@ -1052,16 +1089,19 @@ fn move_bear_to_jam_jar(
     }
 }
 
-fn despawn_sugar_bag(commands: &mut Commands, sugar_bag_query: Query<Entity, With<SugarBag>>) {
-    let sugar_bag_entity = sugar_bag_query.single();
+fn despawn_sugar_bag(
+    commands: &mut Commands,
+    sugar_bag_query: Query<(Entity, &Transform, &mut Velocity), With<SugarBag>>,
+) {
+    let (sugar_bag_entity, _, _) = sugar_bag_query.single();
     commands.entity(sugar_bag_entity).despawn_recursive();
 }
 
 fn despawn_blueberry_basket(
     commands: &mut Commands,
-    blueberry_basket_query: Query<Entity, With<BlueberryBasket>>,
+    blueberry_basket_query: Query<(Entity, &Transform), With<BlueberryBasket>>,
 ) {
-    let blueberry_basket_entity = blueberry_basket_query.single();
+    let (blueberry_basket_entity, _) = blueberry_basket_query.single();
     commands.entity(blueberry_basket_entity).despawn_recursive();
 }
 
