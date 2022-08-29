@@ -153,7 +153,7 @@ fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
         })
         .insert(RigidBody::Dynamic)
         .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(16.0, 16.0, 1.0),
+            half_extends: Vec3::new(12.0, 16.0, 1.0),
             border_radius: None,
         })
         .insert(Velocity::from_linear(Vec3::ZERO))
@@ -831,7 +831,7 @@ fn spawn_bear(mut commands: Commands, asset_server: Res<AssetServer>) {
         .insert(RigidBody::Dynamic)
         .insert(Velocity::from_linear(Vec3::ZERO))
         .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(16.0, 16.0, 1.0),
+            half_extends: Vec3::new(12.0, 16.0, 1.0),
             border_radius: None,
         })
         .insert(
