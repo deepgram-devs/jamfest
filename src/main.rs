@@ -1,13 +1,16 @@
 use bevy::prelude::*;
 use heron::prelude::*;
 
+mod player;
+
+use player::{Player, PlayerPlugin};
+
 const X_RESOLUTION: f32 = 640.0;
 const Y_RESOLUTION: f32 = 480.0;
-const PLAYER_SPEED: f32 = 100.0;
 
 // z-values
 const Z_WOODEN_SIGN: f32 = 4.0;
-const Z_PLAYER: f32 = 3.0;
+pub const Z_PLAYER: f32 = 3.0;
 const Z_BLUEBERRY_BASKET: f32 = 3.0;
 const Z_SUGAR_BAG: f32 = 3.0;
 const Z_WOODEN_PLANKS: f32 = 3.0;
@@ -105,12 +108,11 @@ fn main() {
     .insert_resource(GameState::default())
     .add_plugins(DefaultPlugins)
     .add_plugin(PhysicsPlugin::default())
+    .add_plugin(PlayerPlugin)
     .insert_resource(Gravity::from(Vec3::new(0.0, 0.0, 0.0)))
     .add_startup_system(spawn_wall_tiles)
     .add_startup_system(spawn_lava_tiles)
-    .add_startup_system(spawn_player)
     .add_system(keyboard_input)
-    .add_system(camera_follow_player)
     .add_startup_system(spawn_blueberry_basket)
     .add_startup_system(spawn_wooden_planks)
     .add_startup_system(spawn_bear)
@@ -139,56 +141,7 @@ fn main() {
     app.run();
 }
 
-#[derive(Component)]
-pub(crate) struct Player;
-
-// NOTE: we are using a Dynamic body because it... works
-// but normally one would "move and slide" a Kinematic body in other engines...
-fn spawn_player(mut commands: Commands, asset_server: Res<AssetServer>) {
-    commands
-        .spawn_bundle(SpriteBundle {
-            texture: asset_server.load("bear_player_1.png"),
-            transform: Transform::from_xyz(0.0, -60.0, Z_PLAYER),
-            ..default()
-        })
-        .insert(RigidBody::Dynamic)
-        .insert(CollisionShape::Cuboid {
-            half_extends: Vec3::new(12.0, 16.0, 1.0),
-            border_radius: None,
-        })
-        .insert(Velocity::from_linear(Vec3::ZERO))
-        .insert(RotationConstraints::lock())
-        .insert(
-            CollisionLayers::none()
-                .with_group(Layer::Player)
-                .with_mask(Layer::Items)
-                .with_mask(Layer::Npc)
-                .with_mask(Layer::Tiles),
-        )
-        .insert(Player);
-}
-
-fn keyboard_input(
-    keys: Res<Input<KeyCode>>,
-    mut query: Query<&mut Velocity, With<Player>>,
-    mut speech_events: EventWriter<SpeechEvent>,
-) {
-    let mut velocity = query.single_mut();
-    if keys.pressed(KeyCode::W) {
-        velocity.linear.y = PLAYER_SPEED;
-    } else if keys.pressed(KeyCode::S) {
-        velocity.linear.y = -PLAYER_SPEED;
-    } else {
-        velocity.linear.y = 0.0;
-    }
-    if keys.pressed(KeyCode::A) {
-        velocity.linear.x = -PLAYER_SPEED;
-    } else if keys.pressed(KeyCode::D) {
-        velocity.linear.x = PLAYER_SPEED;
-    } else {
-        velocity.linear.x = 0.0;
-    }
-
+fn keyboard_input(keys: Res<Input<KeyCode>>, mut speech_events: EventWriter<SpeechEvent>) {
     if keys.just_pressed(KeyCode::J) {
         info!("Sending sugar speech event triggered by key press");
         speech_events.send(SpeechEvent::Sugar);
@@ -200,17 +153,6 @@ fn keyboard_input(
         speech_events.send(SpeechEvent::Mentos);
     }
 }
-
-fn camera_follow_player(
-    mut camera_query: Query<&mut Transform, (With<Camera>, Without<Player>)>,
-    player_query: Query<&Transform, With<Player>>,
-) {
-    let mut camera = camera_query.single_mut();
-    let player = player_query.single();
-    camera.translation.x = player.translation.x;
-    camera.translation.y = player.translation.y;
-}
-
 #[derive(Component)]
 pub(crate) struct BlueberryBasket;
 
