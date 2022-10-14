@@ -1,8 +1,10 @@
 use bevy::prelude::*;
 use heron::prelude::*;
 
+mod debug;
 mod player;
 
+use debug::DebugPlugin;
 use player::{Player, PlayerPlugin};
 
 const X_RESOLUTION: f32 = 640.0;
@@ -109,10 +111,10 @@ fn main() {
     .add_plugins(DefaultPlugins)
     .add_plugin(PhysicsPlugin::default())
     .add_plugin(PlayerPlugin)
+    .add_plugin(DebugPlugin)
     .insert_resource(Gravity::from(Vec3::new(0.0, 0.0, 0.0)))
     .add_startup_system(spawn_wall_tiles)
     .add_startup_system(spawn_lava_tiles)
-    .add_system(keyboard_input)
     .add_startup_system(spawn_blueberry_basket)
     .add_startup_system(spawn_wooden_planks)
     .add_startup_system(spawn_bear)
@@ -141,18 +143,6 @@ fn main() {
     app.run();
 }
 
-fn keyboard_input(keys: Res<Input<KeyCode>>, mut speech_events: EventWriter<SpeechEvent>) {
-    if keys.just_pressed(KeyCode::J) {
-        info!("Sending sugar speech event triggered by key press");
-        speech_events.send(SpeechEvent::Sugar);
-    } else if keys.just_pressed(KeyCode::B) {
-        info!("Sending bridge speech event triggered by key press");
-        speech_events.send(SpeechEvent::Bridge);
-    } else if keys.just_pressed(KeyCode::M) {
-        info!("Sending mentos speech event triggered by key press");
-        speech_events.send(SpeechEvent::Mentos);
-    }
-}
 #[derive(Component)]
 pub(crate) struct BlueberryBasket;
 
