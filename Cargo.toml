@@ -21,7 +21,7 @@ futures = { version = "0.3.21", optional = true }
 tokio = { version = "1.17.0", features = ["macros", "rt", "rt-multi-thread"], optional = true }
 
 # websocket dependencies
-wasm-sockets = "0.2.2"
+wasm-sockets = { version = "0.2.2", optional = true }
 
 # utility dependencies
 crossbeam-channel = { version = "0.5.4", optional = true }
@@ -29,4 +29,4 @@ crossbeam-channel = { version = "0.5.4", optional = true }
 [features]
 default = ["deepgram"]
 dynamic = ["bevy/dynamic"]
-deepgram = ["fon", "pasts", "wavy", "futures", "crossbeam-channel"]
+deepgram = ["fon", "pasts", "wavy", "futures", "crossbeam-channel", "wasm-sockets"]
