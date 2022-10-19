@@ -13,7 +13,6 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(spawn_player)
-            .add_system(camera_follow_player)
             .add_system(keyboard_input);
     }
 }
@@ -60,14 +59,4 @@ fn keyboard_input(keys: Res<Input<KeyCode>>, mut query: Query<&mut Velocity, Wit
     } else {
         velocity.linear.x = 0.0;
     }
-}
-
-fn camera_follow_player(
-    mut camera_query: Query<&mut Transform, (With<Camera>, Without<Player>)>,
-    player_query: Query<&Transform, With<Player>>,
-) {
-    let mut camera = camera_query.single_mut();
-    let player = player_query.single();
-    camera.translation.x = player.translation.x;
-    camera.translation.y = player.translation.y;
 }
