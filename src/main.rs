@@ -1,14 +1,16 @@
 use bevy::prelude::*;
 use heron::prelude::*;
 
+mod camera;
 mod debug;
 mod player;
 
+use camera::CameraPlugin;
 use debug::DebugPlugin;
 use player::{Player, PlayerPlugin};
 
 const X_RESOLUTION: f32 = 640.0;
-const Y_RESOLUTION: f32 = 480.0;
+pub const Y_RESOLUTION: f32 = 480.0;
 
 // z-values
 const Z_WOODEN_SIGN: f32 = 4.0;
@@ -89,13 +91,6 @@ struct GameState {
     treasure_chest_opened: bool,
 }
 
-fn setup_camera(mut commands: Commands) {
-    let mut camera = Camera2dBundle::default();
-    camera.projection.scaling_mode = bevy::render::camera::ScalingMode::FixedVertical(1.0);
-    camera.projection.scale = Y_RESOLUTION / 2.0;
-    commands.spawn_bundle(camera);
-}
-
 fn main() {
     let mut app = App::new();
 
@@ -112,6 +107,7 @@ fn main() {
     .add_plugin(PhysicsPlugin::default())
     .add_plugin(PlayerPlugin)
     .add_plugin(DebugPlugin)
+    .add_plugin(CameraPlugin)
     .insert_resource(Gravity::from(Vec3::new(0.0, 0.0, 0.0)))
     .add_startup_system(spawn_wall_tiles)
     .add_startup_system(spawn_lava_tiles)
@@ -124,7 +120,6 @@ fn main() {
     .add_startup_system(spawn_treasure_chest)
     .add_startup_system(spawn_wooden_signs)
     .add_system(puzzle_sign_system)
-    .add_startup_system(setup_camera)
     .add_event::<SpeechEvent>()
     .add_system(handle_sugar_said_event)
     .add_system(handle_mentos_said_event)
