@@ -6,10 +6,17 @@ I used the following guide, with some modifications, to build for the web:
 
 https://bevy-cheatbook.github.io/platforms/wasm.html
 
-After which, you can quickly run the game with:
+You'll need a [Console token][console] to authenticate to Deepgram. You'll
+need this supplied as an environment variable when compiling the build so
+it's available in the WASM artifact.
 
-```
-cargo run --target wasm32-unknown-unknown
+> :warning: Do not release with a token you care about since it'll be available
+> to the client.
+
+After which, you can run the game with:
+
+```shell
+DEEPGRAM_API_KEY=YOUR_KEY cargo run --target wasm32-unknown-unknown --release
 ```
 
 The output of that command will give you a local url that you can open
@@ -91,3 +98,5 @@ zip -r jamfest.zip out/
 And finally, `jamfest.zip` can be uploaded to itch.io.
 
 The game currently only supports WASM builds, but we can re-add desktop support pretty easily.
+
+[console]: https://console.deepgram.com/signup?jump=keys

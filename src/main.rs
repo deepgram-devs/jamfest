@@ -663,7 +663,7 @@ fn spawn_lava_tiles_non_collidable(commands: &mut Commands, asset_server: &Res<A
     for coordinate in coordinates {
         spawn_lava_tile_non_collidable(
             commands,
-            &asset_server,
+            asset_server,
             Transform::from_xyz(
                 coordinate.0 as f32 * 16.0,
                 coordinate.1 as f32 * 16.0,
