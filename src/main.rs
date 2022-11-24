@@ -1078,8 +1078,25 @@ fn despawn_puzzle_text(
 pub(crate) struct PuzzleText;
 
 fn spawn_puzzle_text(commands: &mut Commands, asset_server: Res<AssetServer>, text: &'static str) {
+    let entity = commands.spawn().id();
+
+    // the first bundle we insert is just a background color
+    // but somehow it "inherits"(?) the style from the subsequently
+    // inserted text object - note that any style given to the
+    // background color will be ignored
+    // however, if one inserts the background color after the
+    // text object, the text object's style will be ignored
+    // this is all very annoying, as those components, not
+    // being children of a mutual parent with a style or anything,
+    // should be independent, unless Bevy is doing something
+    // on the backend that is not documented
     commands
-        .spawn_bundle(
+        .entity(entity)
+        .insert_bundle(NodeBundle {
+            color: Color::rgba(0.0, 0.0, 0.0, 0.90).into(),
+            ..default()
+        })
+        .insert_bundle(
             TextBundle::from_sections([TextSection::new(
                 text,
                 TextStyle {
@@ -1102,7 +1119,6 @@ fn spawn_puzzle_text(commands: &mut Commands, asset_server: Res<AssetServer>, te
                     right: Val::Auto,
                     ..default()
                 },
-
                 ..default()
             }),
         )
